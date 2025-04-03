@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent } from "@/components/ui/card"
 import { ArrowLeft, Paperclip, Send, User } from "lucide-react"
 import Link from "next/link"
-import { useToast } from "@/components/ui/use-toast"
+import { toast } from "sonner"
 import { chatService } from "@/lib/api-service"
 
 interface Message {
@@ -46,22 +46,33 @@ export default function ConversationPage({ params }: { params: { id: string } })
   const [sending, setSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const { toast } = useToast()
 
   useEffect(() => {
     const fetchChat = async () => {
       if (!user) return
 
       try {
-        // Fetch chat details - this endpoint isn't explicitly shown in your API
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chats/${params.id}`)
-        if (!response.ok) throw new Error("Failed to fetch chat")
-        const chatData = await response.json()
+        // Fetch chat details
+        const chatResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chats/${params.id}`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        })
+
+        if (!chatResponse.ok) throw new Error("Failed to fetch chat")
+
+        const chatData = await chatResponse.json()
         setChat(chatData)
 
-        // Fetch messages - this endpoint isn't explicitly shown in your API
-        const messagesResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chats/${params.id}/messages`)
+        // Fetch messages
+        const messagesResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chats/${params.id}/messages`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        })
+
         if (!messagesResponse.ok) throw new Error("Failed to fetch messages")
+
         const messagesData = await messagesResponse.json()
 
         const formattedMessages = messagesData.map((message: any) => ({
@@ -79,10 +90,8 @@ export default function ConversationPage({ params }: { params: { id: string } })
         setMessages(formattedMessages)
       } catch (error) {
         console.error("Error fetching conversation:", error)
-        toast({
-          title: "Error",
-          description: "Failed to load conversation. Please try again.",
-          variant: "destructive",
+        toast.error("Failed to load conversation", {
+          description: "Please try again later",
         })
       } finally {
         setLoading(false)
@@ -91,14 +100,15 @@ export default function ConversationPage({ params }: { params: { id: string } })
 
     fetchChat()
 
-    // Set up real-time subscription for new messages
-    // This would typically be done with a WebSocket connection
-    const messageSubscription = setInterval(() => {
+    // Set up polling for new messages
+    const interval = setInterval(() => {
       if (user && params.id) {
         // Poll for new messages
-        fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/chats/${params.id}/messages?after=${messages.length > 0 ? messages[messages.length - 1].createdAt : ""}`,
-        )
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/chats/${params.id}/messages/new`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        })
           .then((response) => {
             if (response.ok) return response.json()
             throw new Error("Failed to fetch new messages")
@@ -127,9 +137,9 @@ export default function ConversationPage({ params }: { params: { id: string } })
     }, 5000) // Poll every 5 seconds
 
     return () => {
-      clearInterval(messageSubscription)
+      clearInterval(interval)
     }
-  }, [user, params.id, toast, messages.length])
+  }, [user, params.id])
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -156,9 +166,24 @@ export default function ConversationPage({ params }: { params: { id: string } })
       let fileType = null
 
       if (file) {
-        // Simulate file upload and getting a URL
-        fileUrl = URL.createObjectURL(file)
-        fileType = file.type.split("/")[0] // e.g., 'image', 'application', etc.
+        // Upload file
+        const formData = new FormData()
+        formData.append("file", file)
+        formData.append("chatId", chat._id)
+
+        const fileResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chats/upload`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: formData,
+        })
+
+        if (!fileResponse.ok) throw new Error("Failed to upload file")
+
+        const fileData = await fileResponse.json()
+        fileUrl = fileData.fileUrl
+        fileType = fileData.fileType
       }
 
       const messageData = {
@@ -194,10 +219,8 @@ export default function ConversationPage({ params }: { params: { id: string } })
       }
     } catch (error) {
       console.error("Error sending message:", error)
-      toast({
-        title: "Error",
-        description: "Failed to send message. Please try again.",
-        variant: "destructive",
+      toast.error("Failed to send message", {
+        description: "Please try again",
       })
     } finally {
       setSending(false)

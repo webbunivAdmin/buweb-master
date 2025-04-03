@@ -4,14 +4,13 @@ import type React from "react"
 
 import { useAuth } from "@/lib/auth-provider"
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useToast } from "@/components/ui/use-toast"
+import { toast } from "sonner"
 
 interface Profile {
   id: string
@@ -31,7 +30,6 @@ export default function ProfilePage() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const { toast } = useToast()
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -39,16 +37,25 @@ export default function ProfilePage() {
 
       setIsLoading(true)
       try {
-        const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+        // Fetch profile from API
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        })
 
-        if (error) throw error
+        if (!response.ok) throw new Error("Failed to fetch profile")
 
+        const data = await response.json()
         setProfile(data)
         setFullName(data.full_name || "")
         setBio(data.bio || "")
         setAvatarUrl(data.avatar_url || "")
       } catch (error) {
         console.error("Error fetching profile:", error)
+        toast.error("Failed to load profile", {
+          description: "Please try again later",
+        })
       } finally {
         setIsLoading(false)
       }
@@ -74,16 +81,27 @@ export default function ProfilePage() {
   const uploadAvatar = async () => {
     if (!avatarFile || !user) return null
 
-    const fileExt = avatarFile.name.split(".").pop()
-    const fileName = `${user.id}-${Math.random().toString(36).substring(2)}.${fileExt}`
+    // Create form data for file upload
+    const formData = new FormData()
+    formData.append("avatar", avatarFile)
 
-    const { data, error } = await supabase.storage.from("avatars").upload(fileName, avatarFile)
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile/avatar`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: formData,
+      })
 
-    if (error) throw error
+      if (!response.ok) throw new Error("Failed to upload avatar")
 
-    const { data: publicUrlData } = supabase.storage.from("avatars").getPublicUrl(fileName)
-
-    return publicUrlData.publicUrl
+      const data = await response.json()
+      return data.avatarUrl
+    } catch (error) {
+      console.error("Error uploading avatar:", error)
+      throw error
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -100,22 +118,22 @@ export default function ProfilePage() {
       }
 
       // Update profile
-      const { error } = await supabase
-        .from("profiles")
-        .update({
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({
           full_name: fullName,
           bio,
           avatar_url: newAvatarUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id)
-
-      if (error) throw error
-
-      toast({
-        title: "Success",
-        description: "Your profile has been updated.",
+        }),
       })
+
+      if (!response.ok) throw new Error("Failed to update profile")
+
+      toast.success("Profile updated successfully")
 
       // Update local state
       setProfile({
@@ -127,10 +145,8 @@ export default function ProfilePage() {
 
       setAvatarFile(null)
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update profile. Please try again.",
-        variant: "destructive",
+      toast.error("Failed to update profile", {
+        description: error.message || "Please try again",
       })
     } finally {
       setIsSaving(false)
@@ -186,7 +202,7 @@ export default function ProfilePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
-                <Input id="role" value={profile?.role || ""} disabled />
+                <Input id="role" value={profile?.role || user?.role || ""} disabled />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bio">Bio</Label>

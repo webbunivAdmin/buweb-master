@@ -2,13 +2,12 @@
 
 import { useAuth } from "@/lib/auth-provider"
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft, Calendar, Clock, Edit, MapPin, Trash, User } from "lucide-react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
-import { useToast } from "@/components/ui/use-toast"
+import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import {
   AlertDialog,
@@ -21,17 +20,18 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { eventService } from "@/lib/api-service"
 
 interface Event {
-  id: string
+  _id: string
   title: string
   description: string
-  start_date: string
-  end_date: string
+  startDate: string
+  endDate: string
   location: string | null
-  created_by: string
-  creator_name: string
-  is_university_event: boolean
+  createdBy: string
+  creatorName: string
+  isUniversityEvent: boolean
   department: string | null
 }
 
@@ -40,7 +40,6 @@ export default function EventPage({ params }: { params: { id: string } }) {
   const [event, setEvent] = useState<Event | null>(null)
   const [loading, setLoading] = useState(true)
   const [userRole, setUserRole] = useState<string | null>(null)
-  const { toast } = useToast()
   const router = useRouter()
 
   useEffect(() => {
@@ -49,46 +48,16 @@ export default function EventPage({ params }: { params: { id: string } }) {
 
       setLoading(true)
       try {
-        // Get user role
-        const { data: profileData, error: profileError } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .single()
-
-        if (profileError) throw profileError
-        setUserRole(profileData.role)
+        // Get user role from auth context
+        setUserRole(user.role)
 
         // Fetch event
-        const { data, error } = await supabase
-          .from("events")
-          .select(`
-            *,
-            profiles(full_name)
-          `)
-          .eq("id", params.id)
-          .single()
-
-        if (error) throw error
-
-        setEvent({
-          id: data.id,
-          title: data.title,
-          description: data.description,
-          start_date: data.start_date,
-          end_date: data.end_date,
-          location: data.location,
-          created_by: data.created_by,
-          creator_name: data.profiles?.full_name || "Unknown",
-          is_university_event: data.is_university_event,
-          department: data.department,
-        })
+        const data = await eventService.getEventById(params.id)
+        setEvent(data)
       } catch (error) {
         console.error("Error fetching event:", error)
-        toast({
-          title: "Error",
-          description: "Failed to load event. Please try again.",
-          variant: "destructive",
+        toast.error("Failed to load event", {
+          description: "Please try again later",
         })
       } finally {
         setLoading(false)
@@ -96,7 +65,7 @@ export default function EventPage({ params }: { params: { id: string } }) {
     }
 
     fetchEvent()
-  }, [user, params.id, toast])
+  }, [user, params.id])
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -120,27 +89,18 @@ export default function EventPage({ params }: { params: { id: string } }) {
     if (!user || !event) return
 
     try {
-      const { error } = await supabase.from("events").delete().eq("id", event.id)
-
-      if (error) throw error
-
-      toast({
-        title: "Success",
-        description: "Event deleted successfully.",
-      })
-
+      await eventService.deleteEvent(event._id)
+      toast.success("Event deleted successfully")
       router.push("/dashboard/calendar")
     } catch (error) {
       console.error("Error deleting event:", error)
-      toast({
-        title: "Error",
-        description: "Failed to delete event. Please try again.",
-        variant: "destructive",
+      toast.error("Failed to delete event", {
+        description: "Please try again later",
       })
     }
   }
 
-  const canEditDelete = userRole === "admin" || (event && user && event.created_by === user.id)
+  const canEditDelete = userRole === "admin" || (event && user && event.createdBy === user.id)
 
   if (loading) {
     return (
@@ -177,7 +137,7 @@ export default function EventPage({ params }: { params: { id: string } }) {
         {canEditDelete && (
           <div className="flex items-center gap-2">
             <Button variant="outline" size="icon" asChild>
-              <Link href={`/dashboard/calendar/edit/${event.id}`}>
+              <Link href={`/dashboard/calendar/edit/${event._id}`}>
                 <Edit className="h-4 w-4" />
               </Link>
             </Button>
@@ -207,7 +167,7 @@ export default function EventPage({ params }: { params: { id: string } }) {
       <Card>
         <CardHeader>
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            {event.is_university_event && <Badge>University Event</Badge>}
+            {event.isUniversityEvent && <Badge>University Event</Badge>}
             {event.department && <Badge variant="outline">{event.department}</Badge>}
           </div>
           <CardTitle className="text-2xl">{event.title}</CardTitle>
@@ -219,9 +179,9 @@ export default function EventPage({ params }: { params: { id: string } }) {
               <div>
                 <div className="font-medium">Date</div>
                 <div className="text-muted-foreground">
-                  {formatDate(event.start_date)}
-                  {new Date(event.start_date).toDateString() !== new Date(event.end_date).toDateString() && (
-                    <> to {formatDate(event.end_date)}</>
+                  {formatDate(event.startDate)}
+                  {new Date(event.startDate).toDateString() !== new Date(event.endDate).toDateString() && (
+                    <> to {formatDate(event.endDate)}</>
                   )}
                 </div>
               </div>
@@ -232,7 +192,7 @@ export default function EventPage({ params }: { params: { id: string } }) {
               <div>
                 <div className="font-medium">Time</div>
                 <div className="text-muted-foreground">
-                  {formatTime(event.start_date)} - {formatTime(event.end_date)}
+                  {formatTime(event.startDate)} - {formatTime(event.endDate)}
                 </div>
               </div>
             </div>
@@ -251,7 +211,7 @@ export default function EventPage({ params }: { params: { id: string } }) {
               <User className="mt-0.5 h-5 w-5 text-muted-foreground" />
               <div>
                 <div className="font-medium">Organizer</div>
-                <div className="text-muted-foreground">{event.creator_name}</div>
+                <div className="text-muted-foreground">{event.creatorName}</div>
               </div>
             </div>
           </div>

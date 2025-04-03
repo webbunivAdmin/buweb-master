@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Bell, Calendar, FileText, Home, LogOut, Menu, MessageSquare, Settings, User } from "lucide-react"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
-import { useToast } from "@/components/ui/use-toast"
+import { toast } from "sonner"
 import { useMobile } from "@/hooks/use-mobile"
 
 export default function DashboardLayout({
@@ -26,9 +26,8 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { user, isLoading, signOut } = useAuth()
+  const { user, isLoading, logout } = useAuth()
   const router = useRouter()
-  const { toast } = useToast()
   const isMobile = useMobile()
   const [open, setOpen] = useState(false)
 
@@ -40,16 +39,11 @@ export default function DashboardLayout({
 
   const handleSignOut = async () => {
     try {
-      await signOut()
-      toast({
-        title: "Success",
-        description: "You have been logged out.",
-      })
+      await logout()
+      toast.success("You have been logged out")
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to log out. Please try again.",
-        variant: "destructive",
+      toast.error("Failed to log out", {
+        description: error.message || "Please try again",
       })
     }
   }
@@ -159,7 +153,7 @@ export default function DashboardLayout({
               <DropdownMenuContent className="w-56" align="end" forceMount>
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">{user.user_metadata?.full_name || user.email}</p>
+                    <p className="text-sm font-medium leading-none">{user.name || user.email}</p>
                     <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
                   </div>
                 </DropdownMenuLabel>

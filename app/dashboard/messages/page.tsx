@@ -2,13 +2,13 @@
 
 import { useAuth } from "@/lib/auth-provider"
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { MessageSquare, Plus, Search, User } from "lucide-react"
+import { toast } from "sonner"
 
 interface Conversation {
   id: string
@@ -34,95 +34,22 @@ export default function MessagesPage() {
 
       setLoading(true)
       try {
-        // Fetch direct conversations
-        const { data: directConversations, error: directError } = await supabase
-          .from("conversations")
-          .select(`
-            id,
-            last_message,
-            last_message_time,
-            is_group,
-            participants!inner(
-              user_id,
-              profiles(id, full_name, avatar_url)
-            )
-          `)
-          .eq("participants.user_id", user.id)
-          .eq("is_group", false)
-          .order("last_message_time", { ascending: false })
-
-        if (directError) throw directError
-
-        // Fetch group conversations
-        const { data: groupConversations, error: groupError } = await supabase
-          .from("conversations")
-          .select(`
-            id,
-            last_message,
-            last_message_time,
-            is_group,
-            group_name,
-            participants!inner(user_id)
-          `)
-          .eq("participants.user_id", user.id)
-          .eq("is_group", true)
-          .order("last_message_time", { ascending: false })
-
-        if (groupError) throw groupError
-
-        // Fetch unread counts
-        const { data: unreadCounts, error: unreadError } = await supabase
-          .from("messages")
-          .select("conversation_id, count")
-          .eq("recipient_id", user.id)
-          .eq("read", false)
-          .group("conversation_id")
-
-        if (unreadError) throw unreadError
-
-        const unreadMap = new Map()
-        unreadCounts?.forEach((item) => {
-          unreadMap.set(item.conversation_id, Number.parseInt(item.count))
-        })
-
-        // Format direct conversations
-        const formattedDirectConversations = directConversations?.map((conv) => {
-          const otherParticipant = conv.participants.find((p) => p.user_id !== user.id)
-
-          return {
-            id: conv.id,
-            last_message: conv.last_message,
-            last_message_time: conv.last_message_time,
-            is_group: false,
-            other_user_id: otherParticipant?.user_id,
-            other_user_name: otherParticipant?.profiles?.full_name || "Unknown",
-            other_user_avatar: otherParticipant?.profiles?.avatar_url || null,
-            unread_count: unreadMap.get(conv.id) || 0,
-          }
-        })
-
-        // Format group conversations
-        const formattedGroupConversations = groupConversations?.map((conv) => {
-          return {
-            id: conv.id,
-            last_message: conv.last_message,
-            last_message_time: conv.last_message_time,
-            is_group: true,
-            group_name: conv.group_name,
-            unread_count: unreadMap.get(conv.id) || 0,
-          }
-        })
-
-        // Combine and sort by last message time
-        const allConversations = [...(formattedDirectConversations || []), ...(formattedGroupConversations || [])].sort(
-          (a, b) => {
-            return new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime()
+        // Fetch conversations from API
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chats`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
           },
-        )
+        })
 
-        setConversations(allConversations)
+        if (!response.ok) throw new Error("Failed to fetch conversations")
+
+        const data = await response.json()
+        setConversations(data)
       } catch (error) {
         console.error("Error fetching conversations:", error)
+        toast.error("Failed to load conversations", {
+          description: "Please try again later",
+        })
       } finally {
         setLoading(false)
       }
@@ -130,26 +57,10 @@ export default function MessagesPage() {
 
     fetchConversations()
 
-    // Set up real-time subscription for new messages
-    const conversationsSubscription = supabase
-      .channel("conversations-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "conversations",
-        },
-        (payload) => {
-          // Refresh conversations when there's an update
-          fetchConversations()
-        },
-      )
-      .subscribe()
+    // Set up polling for new messages
+    const interval = setInterval(fetchConversations, 10000) // Poll every 10 seconds
 
-    return () => {
-      supabase.removeChannel(conversationsSubscription)
-    }
+    return () => clearInterval(interval)
   }, [user])
 
   const formatTime = (dateString: string) => {

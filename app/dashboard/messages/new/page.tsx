@@ -2,7 +2,6 @@
 
 import { useAuth } from "@/lib/auth-provider"
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -10,11 +9,12 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ArrowLeft, Search, User, Users } from "lucide-react"
 import Link from "next/link"
-import { useToast } from "@/components/ui/use-toast"
+import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import { chatService, groupService } from "@/lib/api-service"
 
 interface Profile {
   id: string
@@ -33,7 +33,6 @@ export default function NewMessagePage() {
   const [groupName, setGroupName] = useState("")
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
-  const { toast } = useToast()
   const router = useRouter()
 
   useEffect(() => {
@@ -42,21 +41,22 @@ export default function NewMessagePage() {
 
       setLoading(true)
       try {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("id, full_name, avatar_url, email")
-          .neq("id", user.id)
+        // Fetch users from API
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        })
 
-        if (error) throw error
+        if (!response.ok) throw new Error("Failed to fetch users")
 
-        setProfiles(data)
-        setFilteredProfiles(data)
+        const data = await response.json()
+        setProfiles(data.filter((p: Profile) => p.id !== user.id))
+        setFilteredProfiles(data.filter((p: Profile) => p.id !== user.id))
       } catch (error) {
         console.error("Error fetching profiles:", error)
-        toast({
-          title: "Error",
-          description: "Failed to load users. Please try again.",
-          variant: "destructive",
+        toast.error("Failed to load users", {
+          description: "Please try again later",
         })
       } finally {
         setLoading(false)
@@ -64,7 +64,7 @@ export default function NewMessagePage() {
     }
 
     fetchProfiles()
-  }, [user, toast])
+  }, [user])
 
   useEffect(() => {
     if (searchQuery) {
@@ -86,65 +86,48 @@ export default function NewMessagePage() {
     if (!user || selectedUsers.length === 0 || !messageContent.trim()) return
 
     if (isGroup && !groupName.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter a group name.",
-        variant: "destructive",
-      })
+      toast.error("Please enter a group name")
       return
     }
 
     setSending(true)
     try {
-      // Create conversation
-      const { data: conversationData, error: conversationError } = await supabase
-        .from("conversations")
-        .insert({
-          is_group: isGroup,
-          group_name: isGroup ? groupName : null,
-          last_message: messageContent,
-          last_message_time: new Date().toISOString(),
-        })
-        .select()
-        .single()
+      if (isGroup) {
+        // Create group
+        const groupData = {
+          name: groupName,
+          members: [...selectedUsers, user.id],
+          createdBy: user.id,
+          initialMessage: messageContent,
+        }
 
-      if (conversationError) throw conversationError
+        const data = await groupService.createGroup(groupData)
+        toast.success("Group created successfully")
+        router.push(`/dashboard/messages/${data.id}`)
+      } else {
+        // Start direct chat
+        if (selectedUsers.length !== 1) {
+          toast.error("Please select exactly one user for direct message")
+          return
+        }
 
-      // Add participants
-      const participantsToInsert = [
-        { conversation_id: conversationData.id, user_id: user.id },
-        ...selectedUsers.map((userId) => ({
-          conversation_id: conversationData.id,
-          user_id: userId,
-        })),
-      ]
+        // Start chat with selected user
+        const chatData = await chatService.startChat(user.id, selectedUsers[0])
 
-      const { error: participantsError } = await supabase.from("participants").insert(participantsToInsert)
-
-      if (participantsError) throw participantsError
-
-      // Send message to each recipient
-      for (const recipientId of selectedUsers) {
-        await supabase.from("messages").insert({
-          conversation_id: conversationData.id,
-          sender_id: user.id,
-          recipient_id: recipientId,
+        // Send message
+        await chatService.sendMessage({
+          chatId: chatData.id,
+          senderId: user.id,
           content: messageContent,
         })
+
+        toast.success("Message sent successfully")
+        router.push(`/dashboard/messages/${chatData.id}`)
       }
-
-      toast({
-        title: "Success",
-        description: "Message sent successfully.",
-      })
-
-      router.push(`/dashboard/messages/${conversationData.id}`)
     } catch (error) {
       console.error("Error sending message:", error)
-      toast({
-        title: "Error",
-        description: "Failed to send message. Please try again.",
-        variant: "destructive",
+      toast.error("Failed to send message", {
+        description: "Please try again later",
       })
     } finally {
       setSending(false)
@@ -290,7 +273,6 @@ export default function NewMessagePage() {
               <div>
                 <div className="mb-4 relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input placeholder="Search users..." className="pl-10" />
                   <Input
                     placeholder="Search users..."
                     className="pl-10"

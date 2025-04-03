@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
-import { useToast } from "@/components/ui/use-toast"
+import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
@@ -43,7 +43,6 @@ export default function NewEventPage() {
   const [reminderTime, setReminderTime] = useState("30")
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const { toast } = useToast()
   const router = useRouter()
 
   useEffect(() => {
@@ -54,18 +53,22 @@ export default function NewEventPage() {
       try {
         // Check if user has permission to create events
         if (user.role !== "admin" && user.role !== "faculty") {
-          toast({
-            title: "Permission Denied",
+          toast.error("Permission Denied", {
             description: "You don't have permission to create events.",
-            variant: "destructive",
           })
           router.push("/dashboard/calendar")
           return
         }
 
         // Fetch users for participant selection
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users`)
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        })
+
         if (!response.ok) throw new Error("Failed to fetch users")
+
         const userData = await response.json()
         setUsers(userData.filter((u: User) => u._id !== user.id))
 
@@ -76,32 +79,27 @@ export default function NewEventPage() {
 
         setStartDate(now.toISOString().split("T")[0])
         setStartTime("09:00")
-        setEndDate(+1)
-
-        setStartDate(now.toISOString().split("T")[0])
-        setStartTime("09:00")
         setEndDate(now.toISOString().split("T")[0])
         setEndTime("10:00")
       } catch (error) {
         console.error("Error checking permission:", error)
+        toast.error("Failed to load data", {
+          description: "Please try again later",
+        })
       } finally {
         setLoading(false)
       }
     }
 
     checkPermission()
-  }, [user, router, toast])
+  }, [user, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user) return
 
     if (!title.trim() || !description.trim() || !startDate || !startTime || !endDate || !endTime) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields.",
-        variant: "destructive",
-      })
+      toast.error("Please fill in all required fields")
       return
     }
 
@@ -109,11 +107,7 @@ export default function NewEventPage() {
     const endDateTime = new Date(`${endDate}T${endTime}`)
 
     if (endDateTime <= startDateTime) {
-      toast({
-        title: "Error",
-        description: "End time must be after start time.",
-        variant: "destructive",
-      })
+      toast.error("End time must be after start time")
       return
     }
 
@@ -159,19 +153,12 @@ export default function NewEventPage() {
       }
 
       const data = await eventService.createEvent(eventData)
-
-      toast({
-        title: "Success",
-        description: "Event created successfully.",
-      })
-
+      toast.success("Event created successfully")
       router.push(`/dashboard/calendar/${data._id}`)
     } catch (error) {
       console.error("Error creating event:", error)
-      toast({
-        title: "Error",
-        description: "Failed to create event. Please try again.",
-        variant: "destructive",
+      toast.error("Failed to create event", {
+        description: "Please try again later",
       })
     } finally {
       setSubmitting(false)

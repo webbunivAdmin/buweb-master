@@ -8,7 +8,7 @@ import { CalendarIcon, ChevronLeft, ChevronRight, Plus } from "lucide-react"
 import Link from "next/link"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { eventService } from "@/lib/api-service"
-import { useToast } from "@/components/ui/use-toast"
+import { toast } from "sonner"
 
 interface Event {
   _id: string
@@ -27,7 +27,6 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [currentView, setCurrentView] = useState<"month" | "week" | "day">("month")
-  const { toast } = useToast()
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -39,10 +38,8 @@ export default function CalendarPage() {
         setEvents(data)
       } catch (error) {
         console.error("Error fetching events:", error)
-        toast({
-          title: "Error",
-          description: "Failed to load events. Please try again.",
-          variant: "destructive",
+        toast.error("Failed to load events", {
+          description: "Please try again later",
         })
       } finally {
         setLoading(false)
@@ -50,7 +47,7 @@ export default function CalendarPage() {
     }
 
     fetchEvents()
-  }, [user, toast])
+  }, [user])
 
   const getDaysInMonth = (year: number, month: number) => {
     return new Date(year, month + 1, 0).getDate()
