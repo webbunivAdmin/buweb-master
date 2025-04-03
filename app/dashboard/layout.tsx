@@ -145,7 +145,10 @@ export default function DashboardLayout({
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src="/placeholder.svg?height=32&width=32" alt={user.email || ""} />
+                    <AvatarImage
+                      src={user.profileImageUrl || "/placeholder.svg?height=32&width=32"}
+                      alt={user.email || ""}
+                    />
                     <AvatarFallback>{user.email?.charAt(0).toUpperCase()}</AvatarFallback>
                   </Avatar>
                 </Button>

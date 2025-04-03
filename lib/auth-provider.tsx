@@ -13,6 +13,7 @@ type User = {
   email: string
   role: string
   isVerified: boolean
+  profileImageUrl?: string
 }
 
 type AuthContextType = {
@@ -89,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: email,
         role: response.role,
         isVerified: true,
+        profileImageUrl: response.profileImageUrl,
       }
 
       setUser(userData)
@@ -138,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: email,
         role: data.role,
         isVerified: true,
+        profileImageUrl: data.profileImageUrl,
       }
 
       setUser(userData)

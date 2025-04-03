@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useAuth } from "@/lib/auth-provider"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,6 +11,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { toast } from "sonner"
+import { Upload, User } from "lucide-react"
+import { storage } from "@/lib/firebase"
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
 
 interface Profile {
   id: string
@@ -30,6 +33,7 @@ export default function ProfilePage() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -50,7 +54,7 @@ export default function ProfilePage() {
         setProfile(data)
         setFullName(data.full_name || "")
         setBio(data.bio || "")
-        setAvatarUrl(data.avatar_url || "")
+        setAvatarUrl(data.avatar_url || user.profileImageUrl || "")
       } catch (error) {
         console.error("Error fetching profile:", error)
         toast.error("Failed to load profile", {
@@ -81,25 +85,14 @@ export default function ProfilePage() {
   const uploadAvatar = async () => {
     if (!avatarFile || !user) return null
 
-    // Create form data for file upload
-    const formData = new FormData()
-    formData.append("avatar", avatarFile)
-
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile/avatar`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-        body: formData,
-      })
-
-      if (!response.ok) throw new Error("Failed to upload avatar")
-
-      const data = await response.json()
-      return data.avatarUrl
+      const storageRef = ref(storage, `profile-images/${Date.now()}-${avatarFile.name}`)
+      await uploadBytes(storageRef, avatarFile)
+      const downloadURL = await getDownloadURL(storageRef)
+      return downloadURL
     } catch (error) {
       console.error("Error uploading avatar:", error)
+      toast.error("Failed to upload profile image")
       throw error
     }
   }
@@ -143,6 +136,12 @@ export default function ProfilePage() {
         avatar_url: newAvatarUrl,
       })
 
+      // Update user in localStorage
+      const userData = JSON.parse(localStorage.getItem("user") || "{}")
+      userData.name = fullName
+      userData.profileImageUrl = newAvatarUrl
+      localStorage.setItem("user", JSON.stringify(userData))
+
       setAvatarFile(null)
     } catch (error: any) {
       toast.error("Failed to update profile", {
@@ -171,16 +170,19 @@ export default function ProfilePage() {
             <CardTitle>Profile Picture</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col items-center justify-center gap-4">
-            <Avatar className="h-32 w-32">
-              <AvatarImage src={avatarUrl || "/placeholder.svg?height=128&width=128"} />
-              <AvatarFallback>{fullName?.charAt(0) || user?.email?.charAt(0)}</AvatarFallback>
-            </Avatar>
-            <div className="w-full">
-              <Label htmlFor="avatar" className="mb-2 block">
-                Upload new picture
-              </Label>
-              <Input id="avatar" type="file" accept="image/*" onChange={handleAvatarChange} />
+            <div className="relative cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
+              <Avatar className="h-32 w-32">
+                <AvatarImage src={avatarUrl || ""} />
+                <AvatarFallback className="bg-primary/10 text-primary text-xl">
+                  {fullName ? fullName.charAt(0).toUpperCase() : <User className="h-12 w-12" />}
+                </AvatarFallback>
+              </Avatar>
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                <Upload className="h-8 w-8 text-white" />
+              </div>
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
             </div>
+            <p className="text-sm text-muted-foreground">Click to change your profile picture</p>
           </CardContent>
         </Card>
 
