@@ -87,7 +87,7 @@ export default function SignupPage() {
         password,
         role,
         registrationNumber,
-        profileImageUrl: imageUrl,
+        avatar: imageUrl,
       })
 
       // The toast is handled in the auth provider
@@ -234,8 +234,6 @@ export default function SignupPage() {
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       required
                     />
-                    
-                  </div>
                     <Button
                       type="button"
                       variant="ghost"
@@ -246,9 +244,10 @@ export default function SignupPage() {
                       {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       <span className="sr-only">{showConfirmPassword ? "Hide password" : "Show password"}</span>
                     </Button>
+                  </div>
                 </div>
               </CardContent>
-              <CardFooter className="flex flex-col">
+              <CardFooter className="flex mt-4 flex-col">
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? "Creating account..." : "Create account"}
                 </Button>

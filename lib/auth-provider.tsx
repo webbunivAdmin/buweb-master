@@ -90,7 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: email,
         role: response.role,
         isVerified: true,
-        profileImageUrl: response.profileImageUrl,
+        avatar: response.avatar,
       }
 
       setUser(userData)
@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: email,
         role: data.role,
         isVerified: true,
-        profileImageUrl: data.profileImageUrl,
+        avatar: data.avatar,
       }
 
       setUser(userData)
