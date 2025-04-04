@@ -104,6 +104,8 @@ export default function LoginPage() {
                       onChange={(e) => setPassword(e.target.value)}
                       required
                     />
+                    
+                  </div>
                     <Button
                       type="button"
                       variant="ghost"
@@ -114,7 +116,6 @@ export default function LoginPage() {
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
                     </Button>
-                  </div>
                 </div>
               </CardContent>
               <CardFooter className="flex flex-col">
