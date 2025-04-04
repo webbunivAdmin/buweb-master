@@ -52,7 +52,7 @@ export default function NewEventPage() {
       setLoading(true)
       try {
         // Check if user has permission to create events
-        if (user.role !== "admin" && user.role !== "faculty") {
+        if (user.role !== "Admin" && user.role !== "Faculty") {
           toast.error("Permission Denied", {
             description: "You don't have permission to create events.",
           })

@@ -73,7 +73,7 @@ export default function AnnouncementsPage() {
     })
   }
 
-  const canCreateAnnouncement = user?.role === "admin" || user?.role === "faculty"
+  const canCreateAnnouncement = user?.role === "Admin" || user?.role === "Faculty"
 
   return (
     <div className="space-y-6">
