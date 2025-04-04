@@ -1,19 +1,22 @@
 "use client"
 
 import type React from "react"
-
 import { createContext, useContext, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { authService } from "@/lib/api-service"
 import { toast } from "sonner"
+import Cookies from "js-cookie"
 
 type User = {
   id: string
   name: string
   email: string
   role: string
+  avatar?: string
+  registrationNumber?: string
   isVerified: boolean
   profileImageUrl?: string
+  [key: string]: any // Allow for additional properties
 }
 
 type AuthContextType = {
@@ -27,6 +30,7 @@ type AuthContextType = {
   logout: () => void
   resetPasswordRequest: (email: string) => Promise<void>
   resetPassword: (token: string, newPassword: string) => Promise<void>
+  updateUserData: (userData: Partial<User>) => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -36,18 +40,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true) // Add this line
   const router = useRouter()
 
   // Check if user is logged in on initial load
   useEffect(() => {
     const checkAuth = async () => {
-      const storedToken = localStorage.getItem("token")
+      const storedToken = localStorage.getItem("token") || Cookies.get("token") || null
       const storedUser = localStorage.getItem("user")
 
       if (storedToken && storedUser) {
         setToken(storedToken)
         setUser(JSON.parse(storedUser))
         setIsAuthenticated(true)
+
+        // Ensure token is stored in both places
+        localStorage.setItem("token", storedToken)
+        Cookies.set("token", storedToken, { expires: 7 })
       }
 
       setIsLoading(false)
@@ -67,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.push("/verify-otp")
     } catch (error: any) {
       toast.error("Registration failed", {
-        description: error.response?.data || "An error occurred during registration.",
+        description: error.response?.data?.message || "An error occurred during registration.",
       })
       throw error
     } finally {
@@ -82,15 +91,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await authService.verifyOTP(email, otp)
       setToken(response.token)
       localStorage.setItem("token", response.token)
+      // Add this line to set the cookie
+      Cookies.set("token", response.token, { expires: 7 })
 
-      // Fetch user data or decode from token
+      // Save complete user data
       const userData = {
-        id: response.id,
-        name: response.name,
-        email: email,
-        role: response.role,
+        ...response.user,
         isVerified: true,
-        avatar: response.avatar,
       }
 
       setUser(userData)
@@ -104,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.push("/dashboard")
     } catch (error: any) {
       toast.error("Verification failed", {
-        description: error.response?.data || "Invalid OTP. Please try again.",
+        description: error.response?.data?.message || "Invalid OTP. Please try again.",
       })
       throw error
     } finally {
@@ -116,7 +123,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string) => {
     setIsLoading(true)
     try {
-      // This endpoint isn't explicitly shown in your API, but I'm assuming it exists
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
         method: "POST",
         headers: {
@@ -126,21 +132,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
 
       if (!response.ok) {
-        throw new Error("Login failed")
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Login failed")
       }
 
       const data = await response.json()
       setToken(data.token)
       localStorage.setItem("token", data.token)
+      // Add this line to set the cookie
+      Cookies.set("token", data.token, { expires: 7 }) // Expires in 7 days
 
-      // Fetch user data or decode from token
+      // Save complete user data
       const userData = {
-        id: data.id,
-        name: data.name,
-        email: email,
-        role: data.role,
+        ...data.user,
         isVerified: true,
-        avatar: data.avatar,
+        profileImageUrl: data.user.avatar, // For backward compatibility
       }
 
       setUser(userData)
@@ -162,10 +168,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Update user data
+  const updateUserData = (userData: Partial<User>) => {
+    if (!user) return
+
+    const updatedUser = { ...user, ...userData }
+    setUser(updatedUser)
+    localStorage.setItem("user", JSON.stringify(updatedUser))
+  }
+
   // Logout user
   const logout = () => {
     localStorage.removeItem("token")
     localStorage.removeItem("user")
+    // Add this line to remove the cookie
+    Cookies.remove("token")
     setToken(null)
     setUser(null)
     setIsAuthenticated(false)
@@ -186,7 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
     } catch (error: any) {
       toast.error("Request failed", {
-        description: error.response?.data || "Failed to send password reset email.",
+        description: error.response?.data?.message || "Failed to send password reset email.",
       })
       throw error
     } finally {
@@ -205,7 +222,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.push("/login")
     } catch (error: any) {
       toast.error("Reset failed", {
-        description: error.response?.data || "Failed to reset password.",
+        description: error.response?.data?.message || "Failed to reset password.",
       })
       throw error
     } finally {
@@ -224,6 +241,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logout,
     resetPasswordRequest,
     resetPassword,
+    updateUserData,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

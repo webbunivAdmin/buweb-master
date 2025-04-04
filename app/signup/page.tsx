@@ -21,7 +21,7 @@ export default function SignupPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [role, setRole] = useState("student")
+  const [role, setRole] = useState("Student")
   const [registrationNumber, setRegistrationNumber] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -196,9 +196,9 @@ export default function SignupPage() {
                       <SelectValue placeholder="Select your role" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="student">Student</SelectItem>
-                      <SelectItem value="faculty">Faculty</SelectItem>
-                      <SelectItem value="staff">Staff</SelectItem>
+                      <SelectItem value="Student">Student</SelectItem>
+                      <SelectItem value="Lecturer">Lecturer</SelectItem>
+                      <SelectItem value="Staff">Staff</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

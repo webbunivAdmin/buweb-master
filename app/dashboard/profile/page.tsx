@@ -14,18 +14,20 @@ import { toast } from "sonner"
 import { Upload, User } from "lucide-react"
 import { storage } from "@/lib/firebase"
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
+import { userService } from "@/lib/api-service"
 
 interface Profile {
   id: string
-  full_name: string
+  name: string
   email: string
   bio: string | null
-  avatar_url: string | null
+  avatar: string | null
   role: string
+  registrationNumber: string
 }
 
 export default function ProfilePage() {
-  const { user } = useAuth()
+  const { user, updateUserData } = useAuth()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [fullName, setFullName] = useState("")
   const [bio, setBio] = useState("")
@@ -42,24 +44,23 @@ export default function ProfilePage() {
       setIsLoading(true)
       try {
         // Fetch profile from API
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile`, {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        })
-
-        if (!response.ok) throw new Error("Failed to fetch profile")
-
-        const data = await response.json()
+        const data = await userService.getProfile()
         setProfile(data)
-        setFullName(data.full_name || "")
+        setFullName(data.name || "")
         setBio(data.bio || "")
-        setAvatarUrl(data.avatar_url || user.profileImageUrl || "")
+        setAvatarUrl(data.avatar || user.avatar || "")
       } catch (error) {
         console.error("Error fetching profile:", error)
         toast.error("Failed to load profile", {
           description: "Please try again later",
         })
+
+        // Use data from auth context as fallback
+        if (user) {
+          setFullName(user.name || "")
+          setBio(user.bio || "")
+          setAvatarUrl(user.avatar || user.profileImageUrl || "")
+        }
       } finally {
         setIsLoading(false)
       }
@@ -86,7 +87,7 @@ export default function ProfilePage() {
     if (!avatarFile || !user) return null
 
     try {
-      const storageRef = ref(storage, `profile-images/${Date.now()}-${avatarFile.name}`)
+      const storageRef = ref(storage, `profile-images/${user.id}-${Date.now()}-${avatarFile.name}`)
       await uploadBytes(storageRef, avatarFile)
       const downloadURL = await getDownloadURL(storageRef)
       return downloadURL
@@ -111,36 +112,31 @@ export default function ProfilePage() {
       }
 
       // Update profile
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-        body: JSON.stringify({
-          full_name: fullName,
-          bio,
-          avatar_url: newAvatarUrl,
-        }),
-      })
+      const updatedData = {
+        name: fullName,
+        bio,
+        avatar: newAvatarUrl,
+      }
 
-      if (!response.ok) throw new Error("Failed to update profile")
+      await userService.updateProfile(updatedData)
 
       toast.success("Profile updated successfully")
 
       // Update local state
       setProfile({
         ...profile!,
-        full_name: fullName,
+        name: fullName,
         bio,
-        avatar_url: newAvatarUrl,
+        avatar: newAvatarUrl,
       })
 
-      // Update user in localStorage
-      const userData = JSON.parse(localStorage.getItem("user") || "{}")
-      userData.name = fullName
-      userData.profileImageUrl = newAvatarUrl
-      localStorage.setItem("user", JSON.stringify(userData))
+      // Update user in auth context
+      updateUserData({
+        name: fullName,
+        bio,
+        avatar: newAvatarUrl,
+        profileImageUrl: newAvatarUrl,
+      })
 
       setAvatarFile(null)
     } catch (error: any) {
@@ -201,6 +197,10 @@ export default function ProfilePage() {
                 <Label htmlFor="email">Email</Label>
                 <Input id="email" value={user?.email || ""} disabled />
                 <p className="text-xs text-muted-foreground">Email cannot be changed</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="registrationNumber">Registration Number</Label>
+                <Input id="registrationNumber" value={user?.registrationNumber || ""} disabled />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>

@@ -1,8 +1,9 @@
 import axios from "axios"
+import Cookies from "js-cookie"
 
 // Create an axios instance with base URL
 const API = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000",
+  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api",
   headers: {
     "Content-Type": "application/json",
   },
@@ -10,12 +11,40 @@ const API = axios.create({
 
 // Add a request interceptor to include auth token in requests
 API.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token")
+  let token
+
+  // Check if we're in a browser environment
+  if (typeof window !== "undefined") {
+    // Try to get token from localStorage first, then from cookies
+    token = localStorage.getItem("token") || Cookies.get("token")
+  }
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
+
+// Add a response interceptor to handle auth errors
+API.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Handle 401 Unauthorized errors
+    if (error.response && error.response.status === 401) {
+      // Check if we're in a browser environment
+      if (typeof window !== "undefined") {
+        // Clear auth data
+        localStorage.removeItem("token")
+        localStorage.removeItem("user")
+        Cookies.remove("token")
+
+        // Redirect to login page
+        window.location.href = "/login"
+      }
+    }
+    return Promise.reject(error)
+  },
+)
 
 // Auth Services
 export const authService = {
@@ -111,6 +140,11 @@ export const eventService = {
     return response.data
   },
 
+  getEventById: async (id: string) => {
+    const response = await API.get(`/events/${id}`)
+    return response.data
+  },
+
   updateEvent: async (eventId: string, eventData: any) => {
     const response = await API.put(`/events/${eventId}`, eventData)
     return response.data
@@ -149,6 +183,24 @@ export const messageService = {
 
   deleteMessage: async (messageId: string) => {
     const response = await API.delete(`/messages/${messageId}`)
+    return response.data
+  },
+}
+
+// User Services
+export const userService = {
+  updateProfile: async (userData: any) => {
+    const response = await API.put("/users/profile", userData)
+    return response.data
+  },
+
+  getProfile: async () => {
+    const response = await API.get("/users/profile")
+    return response.data
+  },
+
+  getAllUsers: async () => {
+    const response = await API.get("/users")
     return response.data
   },
 }
