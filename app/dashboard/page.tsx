@@ -4,12 +4,10 @@ import { useAuth } from "@/lib/auth-provider"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { Bell, Calendar, FileText, MessageSquare, Users, BookOpen, GraduationCap, User } from "lucide-react"
+import { Bell, Calendar, FileText, MessageSquare } from "lucide-react"
 import { useEffect, useState } from "react"
 import { announcementService, eventService, notificationService } from "@/lib/api-service"
 import { toast } from "sonner"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Progress } from "@/components/ui/progress"
 
 interface Announcement {
   _id: string
@@ -122,110 +120,11 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">Welcome back, {user?.name || "Student"}</h1>
-        <p className="text-muted-foreground">Here's an overview of your academic progress and recent activities</p>
-      </div>
-
-      {/* Stats Overview */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="shadow-md overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-chart-1/20 to-chart-1/5 rounded-lg"></div>
-          <CardContent className="p-6 relative">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium uppercase text-muted-foreground">Courses</span>
-              <div className="flex items-center justify-between">
-                <span className="text-2xl font-bold">6</span>
-                <BookOpen className="h-4 w-4 text-chart-1" />
-              </div>
-              <span className="text-xs text-muted-foreground">Current semester</span>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-md overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-chart-2/20 to-chart-2/5 rounded-lg"></div>
-          <CardContent className="p-6 relative">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium uppercase text-muted-foreground">GPA</span>
-              <div className="flex items-center justify-between">
-                <span className="text-2xl font-bold">3.8</span>
-                <GraduationCap className="h-4 w-4 text-chart-2" />
-              </div>
-              <span className="text-xs text-muted-foreground">Current semester</span>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-md overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-chart-3/20 to-chart-3/5 rounded-lg"></div>
-          <CardContent className="p-6 relative">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium uppercase text-muted-foreground">Assignments</span>
-              <div className="flex items-center justify-between">
-                <span className="text-2xl font-bold">4</span>
-                <FileText className="h-4 w-4 text-chart-3" />
-              </div>
-              <span className="text-xs text-muted-foreground">Due this week</span>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-md overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-chart-4/20 to-chart-4/5 rounded-lg"></div>
-          <CardContent className="p-6 relative">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium uppercase text-muted-foreground">Attendance</span>
-              <div className="flex items-center justify-between">
-                <span className="text-2xl font-bold">92%</span>
-                <Users className="h-4 w-4 text-chart-4" />
-              </div>
-              <span className="text-xs text-muted-foreground">Current semester</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Course Progress */}
-      <Card className="shadow-md">
-        <CardHeader className="pb-3">
-          <CardTitle>Course Progress</CardTitle>
-          <CardDescription>Track your progress in current courses</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Introduction to Computer Science</span>
-                <span className="text-xs text-muted-foreground">85%</span>
-              </div>
-              <Progress value={85} className="h-2" indicatorColor="bg-chart-1" />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Advanced Mathematics</span>
-                <span className="text-xs text-muted-foreground">72%</span>
-              </div>
-              <Progress value={72} className="h-2" indicatorColor="bg-chart-2" />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Business Ethics</span>
-                <span className="text-xs text-muted-foreground">93%</span>
-              </div>
-              <Progress value={93} className="h-2" indicatorColor="bg-chart-3" />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Data Structures</span>
-                <span className="text-xs text-muted-foreground">65%</span>
-              </div>
-              <Progress value={65} className="h-2" indicatorColor="bg-chart-4" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="container py-6">
+      <h1 className="mb-6 text-3xl font-bold">Dashboard</h1>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="shadow-md">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <div className="space-y-1">
               <CardTitle>Announcements</CardTitle>
@@ -264,7 +163,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-md">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <div className="space-y-1">
               <CardTitle>Messages</CardTitle>
@@ -280,17 +179,12 @@ export default function DashboardPage() {
             ) : messages.length > 0 ? (
               <div className="space-y-4">
                 {messages.map((message) => (
-                  <div key={message._id} className="flex items-start gap-3">
-                    <Avatar className="mt-0.5 h-8 w-8">
-                      <AvatarFallback>{message.senderName.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{message.senderName}</span>
-                        <span className="text-xs text-muted-foreground">{formatTimeAgo(message.createdAt)}</span>
-                      </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2">{message.content}</p>
+                  <div key={message._id} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium">{message.senderName}</h3>
+                      <span className="text-xs text-muted-foreground">{formatDate(message.createdAt)}</span>
                     </div>
+                    <p className="text-sm text-muted-foreground line-clamp-2">{message.content}</p>
                   </div>
                 ))}
                 <Button asChild variant="outline" className="w-full">
@@ -308,7 +202,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-md">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <div className="space-y-1">
               <CardTitle>Upcoming Events</CardTitle>
@@ -325,23 +219,11 @@ export default function DashboardPage() {
               <div className="space-y-4">
                 {events.map((event) => (
                   <div key={event._id} className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-10 w-10 flex-col items-center justify-center rounded-md bg-primary/10 text-primary">
-                        <span className="text-xs font-medium">
-                          {new Date(event.startDate).toLocaleDateString([], { month: "short" })}
-                        </span>
-                        <span className="text-sm font-bold">{new Date(event.startDate).getDate()}</span>
-                      </div>
-                      <div>
-                        <h3 className="font-medium">{event.title}</h3>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(event.startDate).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
-                      </div>
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium">{event.title}</h3>
+                      <span className="text-xs text-muted-foreground">{formatDate(event.startDate)}</span>
                     </div>
+                    <p className="text-sm text-muted-foreground line-clamp-2">{event.description}</p>
                   </div>
                 ))}
                 <Button asChild variant="outline" className="w-full">
@@ -360,8 +242,8 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card className="shadow-md">
+      <div className="mt-6 grid gap-6 md:grid-cols-2">
+        <Card>
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
           </CardHeader>
@@ -387,7 +269,7 @@ export default function DashboardPage() {
               </Button>
               <Button asChild variant="outline" className="h-20 flex-col">
                 <Link href="/dashboard/profile">
-                  <User className="mb-2 h-5 w-5" />
+                  <FileText className="mb-2 h-5 w-5" />
                   <span>My Profile</span>
                 </Link>
               </Button>
@@ -395,7 +277,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-md">
+        <Card>
           <CardHeader>
             <CardTitle>Recent Activity</CardTitle>
           </CardHeader>
@@ -408,31 +290,23 @@ export default function DashboardPage() {
               <div className="space-y-4">
                 {notifications.map((notification) => {
                   let icon
-                  let bgColor
                   switch (notification.type) {
                     case "message":
-                      icon = <MessageSquare className="h-4 w-4 text-chart-2" />
-                      bgColor = "bg-chart-2/10"
+                      icon = <MessageSquare className="h-4 w-4 text-primary" />
                       break
                     case "event":
-                      icon = <Calendar className="h-4 w-4 text-chart-3" />
-                      bgColor = "bg-chart-3/10"
+                      icon = <Calendar className="h-4 w-4 text-primary" />
                       break
                     case "announcement":
-                      icon = <FileText className="h-4 w-4 text-chart-4" />
-                      bgColor = "bg-chart-4/10"
+                      icon = <FileText className="h-4 w-4 text-primary" />
                       break
                     default:
-                      icon = <Bell className="h-4 w-4 text-chart-5" />
-                      bgColor = "bg-chart-5/10"
+                      icon = <Bell className="h-4 w-4 text-primary" />
                   }
 
                   return (
-                    <div
-                      key={notification._id}
-                      className="flex items-center gap-4 rounded-lg border p-3 shadow-sm hover:bg-muted/50 transition-colors"
-                    >
-                      <div className={`rounded-full p-2 ${bgColor}`}>{icon}</div>
+                    <div key={notification._id} className="flex items-center gap-4 rounded-lg border p-3">
+                      <div className="rounded-full bg-primary/10 p-2">{icon}</div>
                       <div className="flex-1">
                         <p className="text-sm">{notification.message}</p>
                         <p className="text-xs text-muted-foreground">{formatTimeAgo(notification.createdAt)}</p>
@@ -443,7 +317,7 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="flex items-center gap-4 rounded-lg border p-3 shadow-sm">
+                <div className="flex items-center gap-4 rounded-lg border p-3">
                   <div className="rounded-full bg-primary/10 p-2">
                     <MessageSquare className="h-4 w-4 text-primary" />
                   </div>
