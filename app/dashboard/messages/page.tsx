@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { MessageSquare, Plus, Search, User } from "lucide-react"
 import { toast } from "sonner"
+import { Badge } from "@/components/ui/badge"
 
 interface Conversation {
   id: string
@@ -91,19 +92,14 @@ export default function MessagesPage() {
   })
 
   return (
-    <div className="container py-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Messages</h1>
-        <Button asChild>
-          <Link href="/dashboard/messages/new">
-            <Plus className="mr-2 h-4 w-4" />
-            New Message
-          </Link>
-        </Button>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold tracking-tight">Messages</h1>
+        <p className="text-muted-foreground">Communicate with your peers, faculty, and staff</p>
       </div>
 
-      <div className="mb-6">
-        <div className="relative">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search conversations..."
@@ -112,13 +108,19 @@ export default function MessagesPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
+        <Button asChild className="w-full sm:w-auto">
+          <Link href="/dashboard/messages/new">
+            <Plus className="mr-2 h-4 w-4" />
+            New Message
+          </Link>
+        </Button>
       </div>
 
-      <Card>
-        <CardHeader>
+      <Card className="shadow-md">
+        <CardHeader className="pb-0">
           <CardTitle>Conversations</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           {loading ? (
             <div className="flex h-[400px] items-center justify-center">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
@@ -129,32 +131,32 @@ export default function MessagesPage() {
                 <Link key={conversation.id} href={`/dashboard/messages/${conversation.id}`} className="block">
                   <div className="flex items-center gap-4 rounded-lg border p-4 transition-colors hover:bg-muted/50">
                     {conversation.is_group ? (
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                        <MessageSquare className="h-6 w-6 text-primary" />
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-chart-3/20">
+                        <MessageSquare className="h-6 w-6 text-chart-3" />
                       </div>
                     ) : (
-                      <Avatar className="h-12 w-12">
+                      <Avatar className="h-12 w-12 border">
                         <AvatarImage src={conversation.other_user_avatar || "/placeholder.svg?height=48&width=48"} />
-                        <AvatarFallback>
+                        <AvatarFallback className="bg-chart-1/20 text-chart-1">
                           {conversation.other_user_name?.charAt(0) || <User className="h-6 w-6" />}
                         </AvatarFallback>
                       </Avatar>
                     )}
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
-                        <h3 className="font-medium">
+                        <h3 className="font-medium truncate">
                           {conversation.is_group ? conversation.group_name : conversation.other_user_name}
                         </h3>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-muted-foreground ml-2 shrink-0">
                           {formatTime(conversation.last_message_time)}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm text-muted-foreground line-clamp-1">{conversation.last_message}</p>
+                      <div className="flex items-center justify-between mt-1">
+                        <p className="text-sm text-muted-foreground truncate">{conversation.last_message}</p>
                         {conversation.unread_count > 0 && (
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                          <Badge variant="default" className="ml-2 shrink-0 bg-chart-2">
                             {conversation.unread_count}
-                          </span>
+                          </Badge>
                         )}
                       </div>
                     </div>

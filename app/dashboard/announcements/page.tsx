@@ -76,21 +76,14 @@ export default function AnnouncementsPage() {
   const canCreateAnnouncement = user?.role === "admin" || user?.role === "faculty"
 
   return (
-    <div className="container py-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Announcements</h1>
-        {canCreateAnnouncement && (
-          <Button asChild>
-            <Link href="/dashboard/announcements/new">
-              <Plus className="mr-2 h-4 w-4" />
-              New Announcement
-            </Link>
-          </Button>
-        )}
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold tracking-tight">Announcements</h1>
+        <p className="text-muted-foreground">Stay updated with the latest university announcements and news</p>
       </div>
 
-      <div className="mb-6">
-        <div className="relative">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search announcements..."
@@ -99,12 +92,24 @@ export default function AnnouncementsPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
+        {canCreateAnnouncement && (
+          <Button asChild className="w-full sm:w-auto">
+            <Link href="/dashboard/announcements/new">
+              <Plus className="mr-2 h-4 w-4" />
+              New Announcement
+            </Link>
+          </Button>
+        )}
       </div>
 
-      <Tabs defaultValue="all">
-        <TabsList className="mb-6">
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="files">With Files</TabsTrigger>
+      <Tabs defaultValue="all" className="w-full">
+        <TabsList className="mb-6 w-full sm:w-auto">
+          <TabsTrigger value="all" className="flex-1 sm:flex-none">
+            All
+          </TabsTrigger>
+          <TabsTrigger value="files" className="flex-1 sm:flex-none">
+            With Files
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="all">
@@ -153,22 +158,24 @@ function AnnouncementsList({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {announcements.map((announcement) => (
         <Link key={announcement._id} href={`/dashboard/announcements/${announcement._id}`} className="block">
-          <Card className="transition-colors hover:bg-muted/50">
-            <CardContent className="p-6">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {announcement.fileUrl && <Badge variant="outline">{announcement.fileType || "File"}</Badge>}
+          <Card className="h-full overflow-hidden transition-all duration-200 hover:shadow-md hover:bg-muted/50">
+            <CardContent className="p-0">
+              <div className="p-6">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {announcement.fileUrl && <Badge variant="outline">{announcement.fileType || "File"}</Badge>}
+                  </div>
+                  <span className="text-sm text-muted-foreground">{formatDate(announcement.createdAt)}</span>
                 </div>
-                <span className="text-sm text-muted-foreground">{formatDate(announcement.createdAt)}</span>
+                <CardTitle className="mb-2 line-clamp-2">{announcement.title}</CardTitle>
+                <p className="mb-4 line-clamp-3 text-muted-foreground">{announcement.content}</p>
               </div>
-              <CardTitle className="mb-2">{announcement.title}</CardTitle>
-              <p className="mb-4 line-clamp-2 text-muted-foreground">{announcement.content}</p>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between border-t bg-muted/30 px-6 py-3">
                 <span className="text-sm">Posted by: {announcement.postedBy}</span>
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" className="font-medium text-primary">
                   Read more
                 </Button>
               </div>
