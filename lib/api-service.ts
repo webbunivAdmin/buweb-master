@@ -104,8 +104,28 @@ export const authService = {
 // Announcement Services
 export const announcementService = {
   createAnnouncement: async (announcementData: any) => {
-    const response = await API.post("/announcements/create", announcementData)
-    return response.data
+    // Create FormData if there's a file to upload
+    if (announcementData.fileData) {
+      const formData = new FormData()
+      formData.append("title", announcementData.title)
+      formData.append("content", announcementData.content)
+      formData.append("postedBy", announcementData.postedBy)
+
+      if (announcementData.fileData.file) {
+        formData.append("file", announcementData.fileData.file)
+      }
+
+      const response = await API.post("/announcements/create", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      })
+      return response.data
+    } else {
+      // Regular JSON request if no file
+      const response = await API.post("/announcements/create", announcementData)
+      return response.data
+    }
   },
 
   getAllAnnouncements: async () => {
@@ -118,11 +138,36 @@ export const announcementService = {
     return response.data
   },
 
+  updateAnnouncement: async (id: string, announcementData: any) => {
+    // Create FormData if there's a file to upload
+    if (announcementData.fileData) {
+      const formData = new FormData()
+      formData.append("title", announcementData.title)
+      formData.append("content", announcementData.content)
+
+      if (announcementData.fileData.file) {
+        formData.append("file", announcementData.fileData.file)
+      }
+
+      const response = await API.put(`/announcements/${id}`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      })
+      return response.data
+    } else {
+      // Regular JSON request if no file
+      const response = await API.put(`/announcements/${id}`, announcementData)
+      return response.data
+    }
+  },
+
   deleteAnnouncement: async (id: string) => {
     const response = await API.delete(`/announcements/${id}`)
     return response.data
   },
 }
+
 
 // Chat Services
 export const chatService = {

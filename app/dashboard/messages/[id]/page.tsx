@@ -445,7 +445,7 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
         </Alert>
       )}
 
-      <Card className="flex-1 overflow-hidden">
+      <Card className="flex-1 overflow-y-auto">
         <CardContent className="flex h-full flex-col p-0">
           {loading ? (
             <div className="flex h-full items-center justify-center">

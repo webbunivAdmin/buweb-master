@@ -18,8 +18,20 @@ import RichTextEditor from "@/components/rich-text-editor"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { marked } from "marked"
 
-export default function NewAnnouncementPage() {
+interface Announcement {
+  _id: string
+  title: string
+  content: string
+  createdAt: string
+  postedBy: string
+  fileUrl?: string
+  fileType?: string
+  fileName?: string
+}
+
+export default function EditAnnouncementPage({ params }: { params: { id: string } }) {
   const { user } = useAuth()
+  const [announcement, setAnnouncement] = useState<Announcement | null>(null)
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
   const [fileData, setFileData] = useState<any>(null)
@@ -29,36 +41,52 @@ export default function NewAnnouncementPage() {
   const router = useRouter()
 
   useEffect(() => {
-    const checkPermission = async () => {
+    const fetchAnnouncement = async () => {
       if (!user) return
 
       setLoading(true)
       try {
-        // Check if user has permission to create announcements
-        if (user.role !== "Admin" && user.role !== "Faculty") {
-          toast.error("Permission Denied", {
-            description: "You don't have permission to create announcements.",
+        const data = await announcementService.getAnnouncementById(params.id)
+        setAnnouncement(data)
+
+        // Set form values
+        setTitle(data.title)
+        setContent(data.content)
+
+        // If there's an existing file, set initial file data
+        if (data.fileUrl) {
+          setFileData({
+            existingUrl: data.fileUrl,
+            existingType: data.fileType,
+            existingName: data.fileName,
           })
-          router.push("/dashboard/announcements")
-          return
         }
       } catch (error) {
-        console.error("Error checking permission:", error)
+        console.error("Error fetching announcement:", error)
+        toast.error("Failed to load announcement", {
+          description: "Please try again.",
+        })
+        router.push("/dashboard/announcements")
       } finally {
         setLoading(false)
       }
     }
 
-    checkPermission()
-  }, [user, router])
+    fetchAnnouncement()
+  }, [user, params.id, router])
 
   const handleFileUpload = (data: { file: File; preview: string | null; type: string }) => {
-    setFileData(data)
+    setFileData({
+      ...fileData,
+      file: data.file,
+      preview: data.preview,
+      type: data.type,
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user) return
+    if (!user || !announcement) return
 
     if (!title.trim() || !content.trim()) {
       toast.error("Please fill in all required fields")
@@ -70,18 +98,17 @@ export default function NewAnnouncementPage() {
       const announcementData = {
         title,
         content,
-        postedBy: user.id,
         fileData: fileData, // Pass the file data to the service
       }
 
-      const data = await announcementService.createAnnouncement(announcementData)
+      await announcementService.updateAnnouncement(announcement._id, announcementData)
 
-      toast.success("Announcement created successfully")
+      toast.success("Announcement updated successfully")
 
-      router.push(`/dashboard/announcements/${data._id}`)
+      router.push(`/dashboard/announcements/${announcement._id}`)
     } catch (error) {
-      console.error("Error creating announcement:", error)
-      toast.error("Failed to create announcement", {
+      console.error("Error updating announcement:", error)
+      toast.error("Failed to update announcement", {
         description: "Please try again.",
       })
     } finally {
@@ -98,6 +125,19 @@ export default function NewAnnouncementPage() {
     }
   }
 
+  // Check if user has permission to edit
+  const canEdit = user?.role === "Admin" || (announcement && user && announcement.postedBy === user.id)
+
+  useEffect(() => {
+    // Redirect if user doesn't have permission
+    if (!loading && !canEdit) {
+      toast.error("Permission Denied", {
+        description: "You don't have permission to edit this announcement.",
+      })
+      router.push(`/dashboard/announcements/${params.id}`)
+    }
+  }, [loading, canEdit, router, params.id])
+
   if (loading) {
     return (
       <div className="container flex h-full items-center justify-center py-10">
@@ -106,21 +146,34 @@ export default function NewAnnouncementPage() {
     )
   }
 
+  if (!announcement) {
+    return (
+      <div className="container py-6">
+        <div className="flex flex-col items-center justify-center gap-4 py-20">
+          <p className="text-center text-muted-foreground">Announcement not found</p>
+          <Button asChild>
+            <Link href="/dashboard/announcements">Back to Announcements</Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="container py-6">
       <div className="mb-6 flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
-          <Link href="/dashboard/announcements">
+          <Link href={`/dashboard/announcements/${announcement._id}`}>
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
-        <h1 className="text-2xl font-bold">New Announcement</h1>
+        <h1 className="text-2xl font-bold">Edit Announcement</h1>
       </div>
 
       <Card>
         <form onSubmit={handleSubmit}>
           <CardHeader>
-            <CardTitle>Create Announcement</CardTitle>
+            <CardTitle>Update Announcement</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
@@ -160,12 +213,24 @@ export default function NewAnnouncementPage() {
 
             <div className="space-y-2">
               <Label>Attachment (Optional)</Label>
-              <FileUploadPreview onFileUpload={handleFileUpload} />
+              <FileUploadPreview
+                onFileUpload={handleFileUpload}
+                initialFileUrl={announcement.fileUrl}
+                initialFileType={announcement.fileType}
+              />
             </div>
           </CardContent>
           <CardFooter>
-            <Button type="submit" disabled={submitting} className="ml-auto">
-              {submitting ? "Creating..." : "Create Announcement"}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.push(`/dashboard/announcements/${announcement._id}`)}
+              className="mr-auto"
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Updating..." : "Update Announcement"}
             </Button>
           </CardFooter>
         </form>
