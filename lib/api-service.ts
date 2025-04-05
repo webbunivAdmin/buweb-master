@@ -104,6 +104,21 @@ export const chatService = {
     return response.data
   },
 
+  getChatMessages: async (chatId: string) => {
+    const response = await API.get(`/chats/${chatId}/messages`)
+    return response.data
+  },
+
+  markMessagesAsRead: async (chatId: string, userId: string) => {
+    const response = await API.post("/chats/read", { chatId, userId })
+    return response.data
+  },
+
+  getUserChats: async (userId: string) => {
+    const response = await API.get(`/chats/user/${userId}`)
+    return response.data
+  },
+
   blockChat: async (chatId: string, userId: string) => {
     const response = await API.post("/chats/block", { chatId, userId })
     return response.data

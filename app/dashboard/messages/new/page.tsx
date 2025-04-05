@@ -18,9 +18,12 @@ import { chatService, groupService } from "@/lib/api-service"
 
 interface Profile {
   id: string
-  full_name: string
-  avatar_url: string | null
+  name: string
   email: string
+  bio: string | null
+  avatar: string | null
+  role: string
+  registrationNumber: string
 }
 
 export default function NewMessagePage() {
@@ -70,7 +73,7 @@ export default function NewMessagePage() {
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       const filtered = profiles.filter(
-        (profile) => profile.full_name.toLowerCase().includes(query) || profile.email.toLowerCase().includes(query),
+        (profile) => profile.name.toLowerCase().includes(query) || profile.email.toLowerCase().includes(query),
       )
       setFilteredProfiles(filtered)
     } else {
@@ -176,7 +179,7 @@ export default function NewMessagePage() {
                         const profile = profiles.find((p) => p.id === userId)
                         return (
                           <div key={userId} className="flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1">
-                            <span>{profile?.full_name}</span>
+                            <span>{profile?.name}</span>
                             <button
                               onClick={() => toggleUserSelection(userId)}
                               className="text-muted-foreground hover:text-foreground"
@@ -203,11 +206,11 @@ export default function NewMessagePage() {
                         <div key={profile.id} className="flex items-center justify-between p-3 hover:bg-muted/50">
                           <div className="flex items-center gap-3">
                             <Avatar className="h-10 w-10">
-                              <AvatarImage src={profile.avatar_url || "/placeholder.svg?height=40&width=40"} />
-                              <AvatarFallback>{profile.full_name.charAt(0)}</AvatarFallback>
+                              <AvatarImage src={profile.avatar || "/placeholder.svg?height=40&width=40"} />
+                              <AvatarFallback>{profile.name.charAt(0)}</AvatarFallback>
                             </Avatar>
                             <div>
-                              <p className="font-medium">{profile.full_name}</p>
+                              <p className="font-medium">{profile.name}</p>
                               <p className="text-sm text-muted-foreground">{profile.email}</p>
                             </div>
                           </div>
@@ -289,7 +292,7 @@ export default function NewMessagePage() {
                         const profile = profiles.find((p) => p.id === userId)
                         return (
                           <div key={userId} className="flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1">
-                            <span>{profile?.full_name}</span>
+                            <span>{profile?.name}</span>
                             <button
                               onClick={() => toggleUserSelection(userId)}
                               className="text-muted-foreground hover:text-foreground"
@@ -316,11 +319,11 @@ export default function NewMessagePage() {
                         <div key={profile.id} className="flex items-center justify-between p-3 hover:bg-muted/50">
                           <div className="flex items-center gap-3">
                             <Avatar className="h-10 w-10">
-                              <AvatarImage src={profile.avatar_url || "/placeholder.svg?height=40&width=40"} />
-                              <AvatarFallback>{profile.full_name.charAt(0)}</AvatarFallback>
+                              <AvatarImage src={profile.avatar || "/placeholder.svg?height=40&width=40"} />
+                              <AvatarFallback>{profile.name.charAt(0)}</AvatarFallback>
                             </Avatar>
                             <div>
-                              <p className="font-medium">{profile.full_name}</p>
+                              <p className="font-medium">{profile.name}</p>
                               <p className="text-sm text-muted-foreground">{profile.email}</p>
                             </div>
                           </div>
