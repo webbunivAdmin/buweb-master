@@ -7,12 +7,14 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { MessageSquare, Plus, Search, Users } from "lucide-react"
+import { MessageSquare, Plus, Search, Users, UserPlus } from "lucide-react"
 import Link from "next/link"
-import { chatService } from "@/lib/api-service"
+import { chatService, groupService } from "@/lib/api-service"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 interface Chat {
   _id: string
@@ -33,36 +35,63 @@ interface Chat {
   updatedAt: string
 }
 
+interface Group {
+  _id: string
+  name: string
+  description?: string
+  type: "class" | "office" | "department" | "discussion"
+  members: {
+    _id: string
+    name: string
+    avatar?: string
+  }[]
+  lastMessage?: {
+    _id: string
+    content: string
+    sender: string
+    createdAt: string
+  }
+  updatedAt: string
+}
+
 export default function MessagesPage() {
   const { user } = useAuth()
   const { socket, isConnected, onlineUsers } = useSocket()
   const [chats, setChats] = useState<Chat[]>([])
+  const [groups, setGroups] = useState<Group[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [activeTab, setActiveTab] = useState("direct")
 
-  // Fetch chats when component mounts
+  // Fetch chats and groups when component mounts
   useEffect(() => {
-    const fetchChats = async () => {
+    const fetchData = async () => {
       if (!user) return
 
       try {
         setLoading(true)
         setError(null)
-        const data = await chatService.getUserChats(user.id)
-        setChats(data)
-      } catch (err) {
-        console.error("Error fetching chats:", err)
+
+        // Fetch direct chats
+        const chatData = await chatService.getUserChats(user.id)
+        setChats(chatData)
+
+        // Fetch groups
+        const groupData = await groupService.getUserGroups(user.id)
+        setGroups(groupData)
+      } catch (err: any) {
+        console.error("Error fetching conversations:", err)
         setError("Failed to load conversations. Please try again later.")
         toast.error("Failed to load conversations", {
-          description: "Please try refreshing the page",
+          description: err.message || "Please try refreshing the page",
         })
       } finally {
         setLoading(false)
       }
     }
 
-    fetchChats()
+    fetchData()
   }, [user])
 
   // Socket.IO event listeners
@@ -106,6 +135,42 @@ export default function MessagesPage() {
       })
     }
 
+    // Listen for new group messages
+    const handleNewGroupMessage = (message: any) => {
+      setGroups((prevGroups) => {
+        // Find if the group already exists
+        const groupExists = prevGroups.some((group) => group._id === message.groupId)
+
+        if (groupExists) {
+          // Update existing group with new message
+          return prevGroups
+            .map((group) => {
+              if (group._id === message.groupId) {
+                return {
+                  ...group,
+                  lastMessage: {
+                    _id: message._id,
+                    content: message.content,
+                    sender: message.sender,
+                    createdAt: message.createdAt,
+                  },
+                  updatedAt: message.createdAt,
+                }
+              }
+              return group
+            })
+            .sort((a, b) => {
+              const timeA = a.lastMessage?.createdAt || a.updatedAt
+              const timeB = b.lastMessage?.createdAt || b.updatedAt
+              return new Date(timeB).getTime() - new Date(timeA).getTime()
+            })
+        } else {
+          // If it's a new group, we'll handle it with the newGroup event
+          return prevGroups
+        }
+      })
+    }
+
     // Listen for new chats
     const handleNewChat = (chat: Chat) => {
       setChats((prevChats) => {
@@ -114,6 +179,17 @@ export default function MessagesPage() {
           return prevChats
         }
         return [chat, ...prevChats]
+      })
+    }
+
+    // Listen for new groups
+    const handleNewGroup = (group: Group) => {
+      setGroups((prevGroups) => {
+        // Check if group already exists to prevent duplicates
+        if (prevGroups.some((g) => g._id === group._id)) {
+          return prevGroups
+        }
+        return [group, ...prevGroups]
       })
     }
 
@@ -143,7 +219,9 @@ export default function MessagesPage() {
 
     // Register event listeners
     socket.on("newMessage", handleNewMessage)
+    socket.on("newGroupMessage", handleNewGroupMessage)
     socket.on("newChat", handleNewChat)
+    socket.on("newGroup", handleNewGroup)
     socket.on("messageRead", handleMessageRead)
 
     // Emit user online status
@@ -152,7 +230,9 @@ export default function MessagesPage() {
     // Cleanup
     return () => {
       socket.off("newMessage", handleNewMessage)
+      socket.off("newGroupMessage", handleNewGroupMessage)
       socket.off("newChat", handleNewChat)
+      socket.off("newGroup", handleNewGroup)
       socket.off("messageRead", handleMessageRead)
     }
   }, [socket, user, isConnected])
@@ -167,12 +247,13 @@ export default function MessagesPage() {
       return otherParticipant?.name.toLowerCase().includes(searchQuery.toLowerCase())
     }
 
-    // For group chats, search in the group name
-    if (chat.isGroup && chat.groupName) {
-      return chat.groupName.toLowerCase().includes(searchQuery.toLowerCase())
-    }
-
     return false
+  })
+
+  // Filter groups based on search query
+  const filteredGroups = groups.filter((group) => {
+    if (!searchQuery.trim()) return true
+    return group.name.toLowerCase().includes(searchQuery.toLowerCase())
   })
 
   const formatTime = (dateString: string) => {
@@ -219,15 +300,38 @@ export default function MessagesPage() {
     return new Date(timeB).getTime() - new Date(timeA).getTime()
   })
 
+  // Sort groups by last message time (most recent first)
+  const sortedGroups = [...filteredGroups].sort((a, b) => {
+    const timeA = a.lastMessage?.createdAt || a.updatedAt
+    const timeB = b.lastMessage?.createdAt || b.updatedAt
+    return new Date(timeB).getTime() - new Date(timeA).getTime()
+  })
+
   return (
     <div className="container py-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Messages</h1>
-        <Button asChild>
-          <Link href="/dashboard/messages/new">
-            <Plus className="mr-2 h-4 w-4" /> New Message
-          </Link>
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" /> New Message
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild>
+              <Link href="/dashboard/messages/new" className="flex items-center">
+                <MessageSquare className="mr-2 h-4 w-4" />
+                <span>Direct Message</span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/dashboard/messages/new-group" className="flex items-center">
+                <UserPlus className="mr-2 h-4 w-4" />
+                <span>Create Group</span>
+              </Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="mb-6">
@@ -242,127 +346,262 @@ export default function MessagesPage() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="border-b p-4">
-          <CardTitle>Conversations</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="divide-y">
-              {Array.from({ length: 5 }).map((_, index) => (
-                <div key={index} className="flex items-center gap-4 p-4">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <div className="space-y-2 flex-1">
-                    <Skeleton className="h-4 w-1/3" />
-                    <Skeleton className="h-3 w-2/3" />
-                  </div>
-                  <Skeleton className="h-3 w-10" />
-                </div>
-              ))}
-            </div>
-          ) : error ? (
-            <div className="flex h-40 flex-col items-center justify-center p-4">
-              <p className="text-center text-destructive mb-2">{error}</p>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setLoading(true)
-                  setError(null)
-                  chatService
-                    .getUserChats(user?.id || "")
-                    .then((data) => setChats(data))
-                    .catch((err) => {
-                      console.error("Error retrying fetch:", err)
-                      setError("Failed to load conversations. Please try again later.")
-                      toast.error("Failed to load conversations")
-                    })
-                    .finally(() => setLoading(false))
-                }}
-              >
-                Try Again
-              </Button>
-            </div>
-          ) : sortedChats.length > 0 ? (
-            <ul className="divide-y">
-              {sortedChats.map((chat) => {
-                const otherParticipant = getOtherParticipant(chat)
-                const isOnline = otherParticipant ? isParticipantOnline(otherParticipant._id) : false
-                const unread = hasUnreadMessages(chat)
-                const unreadCount = unread ? 1 : 0 // This would be dynamic in a real app
+      <Tabs defaultValue="direct" value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="mb-4">
+          <TabsTrigger value="direct" className="flex items-center gap-2">
+            <MessageSquare className="h-4 w-4" />
+            <span>Direct Messages</span>
+          </TabsTrigger>
+          <TabsTrigger value="groups" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            <span>Groups</span>
+          </TabsTrigger>
+        </TabsList>
 
-                return (
-                  <li key={chat._id}>
-                    <Link
-                      href={`/dashboard/messages/${chat._id}`}
-                      className="block p-4 transition-colors hover:bg-muted/50"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="relative">
-                          {chat.isGroup ? (
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                              <Users className="h-5 w-5 text-primary" />
-                            </div>
-                          ) : otherParticipant ? (
-                            <Avatar>
-                              <AvatarImage src={otherParticipant.avatar || "/placeholder.svg?height=40&width=40"} />
-                              <AvatarFallback>{otherParticipant.name.charAt(0)}</AvatarFallback>
-                            </Avatar>
-                          ) : (
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                              <MessageSquare className="h-5 w-5 text-primary" />
-                            </div>
-                          )}
-                          {isOnline && !chat.isGroup && (
-                            <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-green-500 ring-2 ring-background"></span>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <h3 className={`truncate font-medium ${unread ? "font-bold" : ""}`}>
-                              {chat.isGroup ? chat.groupName : otherParticipant?.name || "Unknown User"}
-                            </h3>
-                            <span className="text-xs text-muted-foreground">
-                              {chat.lastMessage ? formatTime(chat.lastMessage.createdAt) : formatTime(chat.updatedAt)}
-                            </span>
-                          </div>
-                          <p
-                            className={`truncate text-sm ${
-                              unread ? "font-semibold text-foreground" : "text-muted-foreground"
-                            }`}
-                          >
-                            {chat.lastMessage ? (
-                              chat.lastMessage.sender === user?.id ? (
-                                <span>You: {chat.lastMessage.content}</span>
-                              ) : (
-                                chat.lastMessage.content
-                              )
-                            ) : (
-                              "No messages yet"
-                            )}
-                          </p>
-                        </div>
-                        {unreadCount > 0 && (
-                          <Badge variant="default" className="ml-2">
-                            {unreadCount}
-                          </Badge>
-                        )}
+        <TabsContent value="direct">
+          <Card>
+            <CardHeader className="border-b p-4">
+              <CardTitle>Direct Messages</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="divide-y">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <div key={index} className="flex items-center gap-4 p-4">
+                      <Skeleton className="h-10 w-10 rounded-full" />
+                      <div className="space-y-2 flex-1">
+                        <Skeleton className="h-4 w-1/3" />
+                        <Skeleton className="h-3 w-2/3" />
                       </div>
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
-          ) : (
-            <div className="flex h-40 flex-col items-center justify-center p-4">
-              <MessageSquare className="mb-2 h-8 w-8 text-muted-foreground" />
-              <p className="text-center text-muted-foreground">No conversations found</p>
-              <Button asChild variant="link" className="mt-2">
-                <Link href="/dashboard/messages/new">Start a new conversation</Link>
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                      <Skeleton className="h-3 w-10" />
+                    </div>
+                  ))}
+                </div>
+              ) : error ? (
+                <div className="flex h-40 flex-col items-center justify-center p-4">
+                  <p className="text-center text-destructive mb-2">{error}</p>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setLoading(true)
+                      setError(null)
+                      Promise.all([
+                        chatService.getUserChats(user?.id || ""),
+                        groupService.getUserGroups(user?.id || ""),
+                      ])
+                        .then(([chatData, groupData]) => {
+                          setChats(chatData)
+                          setGroups(groupData)
+                        })
+                        .catch((err) => {
+                          console.error("Error retrying fetch:", err)
+                          setError("Failed to load conversations. Please try again later.")
+                          toast.error("Failed to load conversations")
+                        })
+                        .finally(() => setLoading(false))
+                    }}
+                  >
+                    Try Again
+                  </Button>
+                </div>
+              ) : sortedChats.length > 0 ? (
+                <ul className="divide-y">
+                  {sortedChats.map((chat) => {
+                    const otherParticipant = getOtherParticipant(chat)
+                    const isOnline = otherParticipant ? isParticipantOnline(otherParticipant._id) : false
+                    const unread = hasUnreadMessages(chat)
+                    const unreadCount = unread ? 1 : 0 // This would be dynamic in a real app
+
+                    return (
+                      <li key={chat._id}>
+                        <Link
+                          href={`/dashboard/messages/${chat._id}`}
+                          className="block p-4 transition-colors hover:bg-muted/50"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="relative">
+                              {chat.isGroup ? (
+                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                                  <Users className="h-5 w-5 text-primary" />
+                                </div>
+                              ) : otherParticipant ? (
+                                <Avatar>
+                                  <AvatarImage src={otherParticipant.avatar || "/placeholder.svg?height=40&width=40"} />
+                                  <AvatarFallback>{otherParticipant.name.charAt(0)}</AvatarFallback>
+                                </Avatar>
+                              ) : (
+                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                                  <MessageSquare className="h-5 w-5 text-primary" />
+                                </div>
+                              )}
+                              {isOnline && !chat.isGroup && (
+                                <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-green-500 ring-2 ring-background"></span>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <h3 className={`truncate font-medium ${unread ? "font-bold" : ""}`}>
+                                  {chat.isGroup ? chat.groupName : otherParticipant?.name || "Unknown User"}
+                                </h3>
+                                <span className="text-xs text-muted-foreground">
+                                  {chat.lastMessage
+                                    ? formatTime(chat.lastMessage.createdAt)
+                                    : formatTime(chat.updatedAt)}
+                                </span>
+                              </div>
+                              <p
+                                className={`truncate text-sm ${
+                                  unread ? "font-semibold text-foreground" : "text-muted-foreground"
+                                }`}
+                              >
+                                {chat.lastMessage ? (
+                                  chat.lastMessage.sender === user?.id ? (
+                                    <span>You: {chat.lastMessage.content}</span>
+                                  ) : (
+                                    chat.lastMessage.content
+                                  )
+                                ) : (
+                                  "No messages yet"
+                                )}
+                              </p>
+                            </div>
+                            {unreadCount > 0 && (
+                              <Badge variant="default" className="ml-2">
+                                {unreadCount}
+                              </Badge>
+                            )}
+                          </div>
+                        </Link>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <div className="flex h-40 flex-col items-center justify-center p-4">
+                  <MessageSquare className="mb-2 h-8 w-8 text-muted-foreground" />
+                  <p className="text-center text-muted-foreground">No direct messages found</p>
+                  <Button asChild variant="link" className="mt-2">
+                    <Link href="/dashboard/messages/new">Start a new conversation</Link>
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="groups">
+          <Card>
+            <CardHeader className="border-b p-4">
+              <CardTitle>Group Chats</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="divide-y">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <div key={index} className="flex items-center gap-4 p-4">
+                      <Skeleton className="h-10 w-10 rounded-full" />
+                      <div className="space-y-2 flex-1">
+                        <Skeleton className="h-4 w-1/3" />
+                        <Skeleton className="h-3 w-2/3" />
+                      </div>
+                      <Skeleton className="h-3 w-10" />
+                    </div>
+                  ))}
+                </div>
+              ) : error ? (
+                <div className="flex h-40 flex-col items-center justify-center p-4">
+                  <p className="text-center text-destructive mb-2">{error}</p>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setLoading(true)
+                      setError(null)
+                      Promise.all([
+                        chatService.getUserChats(user?.id || ""),
+                        groupService.getUserGroups(user?.id || ""),
+                      ])
+                        .then(([chatData, groupData]) => {
+                          setChats(chatData)
+                          setGroups(groupData)
+                        })
+                        .catch((err) => {
+                          console.error("Error retrying fetch:", err)
+                          setError("Failed to load conversations. Please try again later.")
+                          toast.error("Failed to load conversations")
+                        })
+                        .finally(() => setLoading(false))
+                    }}
+                  >
+                    Try Again
+                  </Button>
+                </div>
+              ) : sortedGroups.length > 0 ? (
+                <ul className="divide-y">
+                  {sortedGroups.map((group) => {
+                    return (
+                      <li key={group._id}>
+                        <Link
+                          href={`/dashboard/messages/groups/${group._id}`}
+                          className="block p-4 transition-colors hover:bg-muted/50"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="relative">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                                <Users className="h-5 w-5 text-primary" />
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="truncate font-medium">{group.name}</h3>
+                                  <Badge variant="outline" className="capitalize text-xs">
+                                    {group.type}
+                                  </Badge>
+                                </div>
+                                <span className="text-xs text-muted-foreground">
+                                  {group.lastMessage
+                                    ? formatTime(group.lastMessage.createdAt)
+                                    : formatTime(group.updatedAt)}
+                                </span>
+                              </div>
+                              <p className="truncate text-sm text-muted-foreground">
+                                {group.lastMessage ? (
+                                  group.lastMessage.sender === user?.id ? (
+                                    <span>You: {group.lastMessage.content}</span>
+                                  ) : (
+                                    <>
+                                      <span className="font-medium">
+                                        {group.members.find((m) => m._id === group.lastMessage?.sender)?.name ||
+                                          "Someone"}
+                                        :
+                                      </span>{" "}
+                                      {group.lastMessage.content}
+                                    </>
+                                  )
+                                ) : (
+                                  "No messages yet"
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        </Link>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <div className="flex h-40 flex-col items-center justify-center p-4">
+                  <Users className="mb-2 h-8 w-8 text-muted-foreground" />
+                  <p className="text-center text-muted-foreground">No group chats found</p>
+                  <Button asChild variant="link" className="mt-2">
+                    <Link href="/dashboard/messages/new-group">Create a new group</Link>
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

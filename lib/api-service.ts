@@ -51,7 +51,7 @@ API.interceptors.response.use(
 
     // Create a more informative error
     const enhancedError = new Error(error.response?.data?.error || error.message || "An unknown error occurred") as any
-    (enhancedError as any).status = error.response?.status
+    enhancedError.status = error.response?.status
     enhancedError.data = error.response?.data
 
     return Promise.reject(enhancedError)
@@ -63,6 +63,26 @@ export const authService = {
   register: async (userData: any) => {
     const response = await API.post("/auth/register", userData)
     return response.data
+  },
+
+  login: async (email: string, password: string) => {
+    const response = await API.post("/auth/login", { email, password })
+
+    // Store token and user data
+    if (response.data.token) {
+      localStorage.setItem("token", response.data.token)
+      localStorage.setItem("user", JSON.stringify(response.data.user))
+      Cookies.set("token", response.data.token, { expires: 7 }) // 7 days
+    }
+
+    return response.data
+  },
+
+  logout: () => {
+    localStorage.removeItem("token")
+    localStorage.removeItem("user")
+    Cookies.remove("token")
+    window.location.href = "/login"
   },
 
   verifyOTP: async (email: string, otp: string) => {
@@ -205,6 +225,28 @@ export const chatService = {
     }
   },
 
+  // Unblock a chat
+  unblockChat: async (chatId: string, userId: string) => {
+    try {
+      const response = await API.post("/chats/unblock", { chatId, userId })
+      return response.data
+    } catch (error) {
+      console.error("Error in unblockChat:", error)
+      throw error
+    }
+  },
+
+  // Check if a chat is blocked
+  isChatBlocked: async (chatId: string) => {
+    try {
+      const response = await API.get(`/chats/${chatId}/blocked`)
+      return response.data
+    } catch (error) {
+      console.error("Error in isChatBlocked:", error)
+      throw error
+    }
+  },
+
   // Upload a file for a chat
   uploadFile: async (file: File, chatId: string, senderId: string) => {
     try {
@@ -239,6 +281,12 @@ export const groupService = {
   }) => {
     try {
       console.log("API createGroup called with:", groupData)
+
+      // Validate input
+      if (!groupData.name || !groupData.adminId || !groupData.members || groupData.members.length === 0) {
+        throw new Error("Group name, admin ID, and at least one member are required")
+      }
+
       const response = await API.post("/groups/create", groupData)
       return response.data
     } catch (error) {
@@ -256,6 +304,11 @@ export const groupService = {
     type?: string
   }) => {
     try {
+      // Validate input
+      if (!messageData.groupId || !messageData.senderId || !messageData.content) {
+        throw new Error("Group ID, sender ID, and content are required")
+      }
+
       const response = await API.post("/groups/send", messageData)
       return response.data
     } catch (error) {
@@ -267,6 +320,10 @@ export const groupService = {
   // Get all groups for a user
   getUserGroups: async (userId: string) => {
     try {
+      if (!userId) {
+        throw new Error("User ID is required")
+      }
+
       const response = await API.get(`/groups/user/${userId}`)
       return response.data
     } catch (error) {
@@ -278,6 +335,10 @@ export const groupService = {
   // Get group details
   getGroupDetails: async (groupId: string) => {
     try {
+      if (!groupId) {
+        throw new Error("Group ID is required")
+      }
+
       const response = await API.get(`/groups/${groupId}`)
       return response.data
     } catch (error) {
@@ -289,6 +350,10 @@ export const groupService = {
   // Get messages for a group
   getGroupMessages: async (groupId: string, page = 1, limit = 50) => {
     try {
+      if (!groupId) {
+        throw new Error("Group ID is required")
+      }
+
       const response = await API.get(`/groups/${groupId}/messages`, {
         params: { page, limit },
       })
@@ -302,6 +367,10 @@ export const groupService = {
   // Add members to a group
   addGroupMembers: async (groupId: string, memberIds: string[]) => {
     try {
+      if (!groupId || !memberIds || memberIds.length === 0) {
+        throw new Error("Group ID and at least one member ID are required")
+      }
+
       const response = await API.post(`/groups/${groupId}/members`, { memberIds })
       return response.data
     } catch (error) {
@@ -313,6 +382,10 @@ export const groupService = {
   // Remove a member from a group
   removeGroupMember: async (groupId: string, memberId: string) => {
     try {
+      if (!groupId || !memberId) {
+        throw new Error("Group ID and member ID are required")
+      }
+
       const response = await API.delete(`/groups/${groupId}/members/${memberId}`)
       return response.data
     } catch (error) {
@@ -324,6 +397,10 @@ export const groupService = {
   // Request to join a group
   requestToJoinGroup: async (userId: string, groupId: string) => {
     try {
+      if (!userId || !groupId) {
+        throw new Error("User ID and group ID are required")
+      }
+
       const response = await API.post("/groups/request-join", { userId, groupId })
       return response.data
     } catch (error) {
@@ -332,9 +409,28 @@ export const groupService = {
     }
   },
 
+  // Get pending join requests for a group
+  getGroupJoinRequests: async (groupId: string) => {
+    try {
+      if (!groupId) {
+        throw new Error("Group ID is required")
+      }
+
+      const response = await API.get(`/groups/${groupId}/join-requests`)
+      return response.data
+    } catch (error) {
+      console.error("Error in getGroupJoinRequests:", error)
+      throw error
+    }
+  },
+
   // Approve a join request
   approveJoinRequest: async (groupId: string, userId: string, adminId: string) => {
     try {
+      if (!groupId || !userId || !adminId) {
+        throw new Error("Group ID, user ID, and admin ID are required")
+      }
+
       const response = await API.post(`/groups/${groupId}/approve`, { userId, adminId })
       return response.data
     } catch (error) {
@@ -346,10 +442,147 @@ export const groupService = {
   // Reject a join request
   rejectJoinRequest: async (groupId: string, userId: string, adminId: string) => {
     try {
+      if (!groupId || !userId || !adminId) {
+        throw new Error("Group ID, user ID, and admin ID are required")
+      }
+
       const response = await API.post(`/groups/${groupId}/reject`, { userId, adminId })
       return response.data
     } catch (error) {
       console.error("Error in rejectJoinRequest:", error)
+      throw error
+    }
+  },
+
+  // Leave a group
+  leaveGroup: async (groupId: string, userId: string) => {
+    try {
+      if (!groupId || !userId) {
+        throw new Error("Group ID and user ID are required")
+      }
+
+      const response = await API.post(`/groups/${groupId}/leave`, { userId })
+      return response.data
+    } catch (error) {
+      console.error("Error in leaveGroup:", error)
+      throw error
+    }
+  },
+
+  // Update group details
+  updateGroup: async (
+    groupId: string,
+    updateData: {
+      name?: string
+      description?: string
+      type?: string
+      isPublic?: boolean
+    },
+  ) => {
+    try {
+      if (!groupId) {
+        throw new Error("Group ID is required")
+      }
+
+      const response = await API.put(`/groups/${groupId}`, updateData)
+      return response.data
+    } catch (error) {
+      console.error("Error in updateGroup:", error)
+      throw error
+    }
+  },
+
+  // Make a user an admin of a group
+  makeGroupAdmin: async (groupId: string, userId: string, adminId: string) => {
+    try {
+      if (!groupId || !userId || !adminId) {
+        throw new Error("Group ID, user ID, and admin ID are required")
+      }
+
+      const response = await API.post(`/groups/${groupId}/make-admin`, { userId, adminId })
+      return response.data
+    } catch (error) {
+      console.error("Error in makeGroupAdmin:", error)
+      throw error
+    }
+  },
+
+  // Remove admin status from a user
+  removeGroupAdmin: async (groupId: string, userId: string, adminId: string) => {
+    try {
+      if (!groupId || !userId || !adminId) {
+        throw new Error("Group ID, user ID, and admin ID are required")
+      }
+
+      const response = await API.post(`/groups/${groupId}/remove-admin`, { userId, adminId })
+      return response.data
+    } catch (error) {
+      console.error("Error in removeGroupAdmin:", error)
+      throw error
+    }
+  },
+
+  // Pin a message in a group
+  pinGroupMessage: async (groupId: string, messageId: string, userId: string) => {
+    try {
+      if (!groupId || !messageId || !userId) {
+        throw new Error("Group ID, message ID, and user ID are required")
+      }
+
+      const response = await API.post(`/groups/${groupId}/pin-message`, { messageId, userId })
+      return response.data
+    } catch (error) {
+      console.error("Error in pinGroupMessage:", error)
+      throw error
+    }
+  },
+
+  // Unpin a message in a group
+  unpinGroupMessage: async (groupId: string, messageId: string, userId: string) => {
+    try {
+      if (!groupId || !messageId || !userId) {
+        throw new Error("Group ID, message ID, and user ID are required")
+      }
+
+      const response = await API.post(`/groups/${groupId}/unpin-message`, { messageId, userId })
+      return response.data
+    } catch (error) {
+      console.error("Error in unpinGroupMessage:", error)
+      throw error
+    }
+  },
+
+  // Get pinned messages in a group
+  getPinnedMessages: async (groupId: string) => {
+    try {
+      if (!groupId) {
+        throw new Error("Group ID is required")
+      }
+
+      const response = await API.get(`/groups/${groupId}/pinned-messages`)
+      return response.data
+    } catch (error) {
+      console.error("Error in getPinnedMessages:", error)
+      throw error
+    }
+  },
+
+  // Upload a file for a group message
+  uploadGroupFile: async (file: File, groupId: string, senderId: string) => {
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("groupId", groupId)
+      formData.append("senderId", senderId)
+
+      const response = await API.post("/groups/upload", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      })
+      return response.data
+    } catch (error) {
+      console.error("Error in uploadGroupFile:", error)
       throw error
     }
   },
@@ -428,6 +661,18 @@ export const userService = {
 
   getAllUsers: async () => {
     const response = await API.get("/users")
+    return response.data
+  },
+
+  getUserById: async (userId: string) => {
+    const response = await API.get(`/users/${userId}`)
+    return response.data
+  },
+
+  searchUsers: async (query: string) => {
+    const response = await API.get(`/users/search`, {
+      params: { query },
+    })
     return response.data
   },
 }

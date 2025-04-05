@@ -9,55 +9,73 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent } from "@/components/ui/card"
-import { AlertCircle, ArrowLeft, Check, CheckCheck, Loader2, RefreshCw, Send } from "lucide-react"
+import {
+  AlertCircle,
+  ArrowLeft,
+  Check,
+  Info,
+  Loader2,
+  MoreVertical,
+  Pin,
+  RefreshCw,
+  Send,
+  UserPlus,
+  Users,
+} from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { chatService } from "@/lib/api-service"
+import { groupService } from "@/lib/api-service"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { use } from "react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { Badge } from "@/components/ui/badge"
 
 interface Message {
   _id: string
-  sender: string
+  sender: {
+    _id: string
+    name: string
+    avatar?: string
+  }
   content: string
   createdAt: string
   fileUrl?: string
   type?: string
-  senderName?: string
-  senderAvatar?: string
-  isSelf: boolean
-  readBy?: string[]
+  isSelf?: boolean
 }
 
-interface Chat {
+interface Group {
   _id: string
-  participants: {
+  name: string
+  description?: string
+  type: "class" | "office" | "department" | "discussion"
+  members: {
     _id: string
     name: string
     avatar?: string
   }[]
-  isGroup: boolean
-  groupName?: string
+  admins: string[]
+  isPublic: boolean
+  pinnedMessages: Message[]
 }
 
-export default function ConversationPage({ params }: { params: Promise<{ id: string }> }) {
+export default function GroupPage({ params }: { params: Promise<{ id: string }> }) {
   // Unwrap params using React.use
   const unwrappedParams = use(params)
-  const chatId = unwrappedParams.id
+  const groupId = unwrappedParams.id
 
   const { user } = useAuth()
-  const {
-    socket,
-    isConnected,
-    onlineUsers,
-    joinChat,
-    sendMessage: emitMessage,
-    setTyping,
-    markMessageAsRead,
-  } = useSocket()
+  const { socket, isConnected, onlineUsers } = useSocket()
 
-  const [chat, setChat] = useState<Chat | null>(null)
+  const [group, setGroup] = useState<Group | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [loading, setLoading] = useState(true)
@@ -70,82 +88,61 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const lastMessageIdRef = useRef<string | null>(null)
 
-  // Join the chat room when component mounts
+  // Join the group room when component mounts
   useEffect(() => {
-    if (isConnected && chatId) {
-      joinChat(chatId)
+    if (isConnected && groupId) {
+      if (socket) {
+        socket.emit("joinGroup", groupId)
+      }
     }
-  }, [isConnected, chatId, joinChat])
+  }, [isConnected, groupId, socket])
 
-  // Listen for new messages
+  // Listen for new group messages
   useEffect(() => {
     if (!socket || !user) return
 
-    const handleNewMessage = (message: any) => {
-      console.log("New message received:", message)
+    const handleNewGroupMessage = (message: any) => {
+      console.log("New group message received:", message)
 
-      if (message.chatId === chatId) {
-        const formattedMessage = {
-          _id: message._id,
-          sender: message.sender,
-          content: message.content,
-          createdAt: message.createdAt,
-          fileUrl: message.fileUrl,
-          type: message.type,
-          senderName: message.senderName,
-          senderAvatar: message.senderAvatar,
-          readBy: message.readBy || [],
-          isSelf: message.sender === user.id,
+      if (message.groupId === groupId) {
+        // Check if message already exists to prevent duplicates
+        if (messages.some((m) => m._id === message._id)) {
+          return
         }
 
-        setMessages((prev) => {
-          // Check if message already exists to prevent duplicates
-          if (prev.some((m) => m._id === message._id)) {
-            return prev
-          }
-          return [...prev, formattedMessage]
-        })
+        const formattedMessage = {
+          ...message,
+          isSelf: message.sender._id === user.id,
+        }
+
+        setMessages((prev) => [...prev, formattedMessage])
 
         // Update last message ID reference
         lastMessageIdRef.current = message._id
-
-        // Mark message as read if it's not from the current user
-        if (message.sender !== user.id) {
-          markMessageAsRead(message._id, chatId)
-          chatService.markMessagesAsRead(chatId, user.id)
-        }
       }
     }
 
-    const handleTypingUpdate = ({ chatId: typingChatId, users }: { chatId: string; users: string[] }) => {
-      if (typingChatId === chatId) {
+    const handleGroupTypingUpdate = ({ groupId: typingGroupId, users }: { groupId: string; users: string[] }) => {
+      if (typingGroupId === groupId) {
         setTypingUsers(users.filter((id) => id !== user.id))
       }
     }
 
-    const handleMessageReadUpdate = ({ messageId, userId }: { messageId: string; userId: string }) => {
-      setMessages((prev) =>
-        prev.map((msg) => (msg._id === messageId ? { ...msg, readBy: [...(msg.readBy || []), userId] } : msg)),
-      )
-    }
-
     // Clean up any existing listeners before adding new ones
-    socket.off("newMessage").off("userTyping").off("messageRead")
+    socket.off("newGroupMessage").off("groupUserTyping")
 
     // Add listeners
-    socket.on("newMessage", handleNewMessage)
-    socket.on("userTyping", handleTypingUpdate)
-    socket.on("messageRead", handleMessageReadUpdate) // Make sure this matches the event name from the server
+    socket.on("newGroupMessage", handleNewGroupMessage)
+    socket.on("groupUserTyping", handleGroupTypingUpdate)
 
     return () => {
-      socket.off("newMessage", handleNewMessage)
-      socket.off("userTyping", handleTypingUpdate)
-      socket.off("messageRead", handleMessageReadUpdate)
+      socket.off("newGroupMessage", handleNewGroupMessage)
+      socket.off("groupUserTyping", handleGroupTypingUpdate)
     }
-  }, [socket, chatId, user, markMessageAsRead])
+  }, [socket, groupId, user, messages])
 
-  // Fetch chat and messages
-  const fetchMessages = async (isInitialLoad = false) => {
+  // Fetch group and messages
+  const fetchGroupData = async (isInitialLoad = false) => {
     if (!user) return
 
     try {
@@ -153,37 +150,24 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
         setLoading(true)
         setError(null)
 
-        // Fetch chat details
-        const chatData = await chatService.getUserChats(user.id)
-        const currentChat = chatData.find((c: any) => c._id === chatId)
+        // Fetch group details
+        const groupData = await groupService.getGroupDetails(groupId)
 
-        if (!currentChat) {
-          throw new Error("Chat not found")
+        if (!groupData) {
+          throw new Error("Group not found")
         }
 
-        setChat({
-          _id: currentChat._id,
-          participants: currentChat.participants,
-          isGroup: currentChat.participants.length > 2,
-          groupName: currentChat.name,
-        })
+        setGroup(groupData)
       } else {
         setRefreshing(true)
       }
 
       // Fetch messages
-      const messagesData = await chatService.getChatMessages(chatId)
+      const messagesData = await groupService.getGroupMessages(groupId)
 
+      // Format messages and add isSelf flag
       const formattedMessages = messagesData.map((message: any) => ({
-        _id: message._id,
-        sender: message.sender._id,
-        content: message.content,
-        createdAt: message.createdAt,
-        fileUrl: message.fileUrl,
-        type: message.type,
-        senderName: message.sender.name || "Unknown",
-        senderAvatar: message.sender.avatar,
-        readBy: message.readBy || [],
+        ...message,
         isSelf: message.sender._id === user.id,
       }))
 
@@ -193,15 +177,12 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
       }
 
       setMessages(formattedMessages)
-
-      // Mark all messages as read
-      await chatService.markMessagesAsRead(chatId, user.id)
-    } catch (error) {
-      console.error("Error fetching conversation:", error)
+    } catch (error: any) {
+      console.error("Error fetching group data:", error)
       if (isInitialLoad) {
-        setError("Failed to load conversation. Please try again later.")
-        toast.error("Failed to load conversation", {
-          description: "Please try again later",
+        setError("Failed to load group. Please try again later.")
+        toast.error("Failed to load group", {
+          description: error.message || "Please try again later",
         })
       } else {
         console.error("Error refreshing messages:", error)
@@ -214,15 +195,15 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
 
   // Initial fetch
   useEffect(() => {
-    fetchMessages(true)
-  }, [user, chatId])
+    fetchGroupData(true)
+  }, [user, groupId])
 
   // Set up polling for message updates
   useEffect(() => {
     // Start polling interval
     pollingIntervalRef.current = setInterval(() => {
       if (!loading && !refreshing && user) {
-        fetchMessages(false)
+        fetchGroupData(false)
       }
     }, 5000) // Poll every 5 seconds
 
@@ -232,7 +213,7 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
         clearInterval(pollingIntervalRef.current)
       }
     }
-  }, [loading, refreshing, user, chatId])
+  }, [loading, refreshing, user, groupId])
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -247,7 +228,9 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
     // Handle typing indicator
     if (isConnected && user) {
       // Send typing indicator
-      setTyping(chatId, true)
+      if (socket) {
+        socket.emit("groupTyping", { groupId, isTyping: true })
+      }
 
       // Clear previous timeout
       if (typingTimeoutRef.current) {
@@ -256,21 +239,27 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
 
       // Set timeout to stop typing indicator after 2 seconds of inactivity
       typingTimeoutRef.current = setTimeout(() => {
-        setTyping(chatId, false)
+        if (socket) {
+          if (socket) {
+            if (socket) {
+              socket.emit("groupTyping", { groupId, isTyping: false })
+            }
+          }
+        }
       }, 2000)
     }
   }
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user || !newMessage.trim() || !chat) return
+    if (!user || !newMessage.trim() || !group) return
 
     setSending(true)
     try {
       // Prepare message data
       const messageData = {
         senderId: user.id,
-        chatId: chat._id,
+        groupId: group._id,
         content: newMessage.trim(),
         type: "text",
       }
@@ -278,14 +267,15 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
       // Create optimistic message for immediate UI update
       const optimisticMessage: Message = {
         _id: `temp-${Date.now()}`,
-        sender: user.id,
+        sender: {
+          _id: user.id,
+          name: user.name,
+          avatar: user.avatar,
+        },
         content: newMessage.trim(),
         createdAt: new Date().toISOString(),
         type: "text",
-        senderName: user.name,
-        senderAvatar: user.avatar,
         isSelf: true,
-        readBy: [user.id],
       }
 
       // Add optimistic message to UI
@@ -295,17 +285,12 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
       setNewMessage("")
 
       // Send message to server
-      const data = await chatService.sendMessage(messageData)
+      const data = await groupService.sendGroupMessage(messageData)
 
       // Emit the message via socket
-      emitMessage({
-        ...messageData,
-        _id: data._id,
-        senderName: user.name,
-        senderAvatar: user.avatar,
-        createdAt: new Date().toISOString(),
-        readBy: [user.id],
-        recipientId: chat.participants.find((p) => p._id !== user.id)?._id,
+      socket?.emit("sendGroupMessage", {
+        ...data,
+        groupId,
       })
 
       // Replace optimistic message with real one
@@ -313,9 +298,8 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
         prev.map((msg) =>
           msg._id === optimisticMessage._id
             ? {
-                ...msg,
-                _id: data._id,
-                createdAt: data.createdAt || msg.createdAt,
+                ...data,
+                isSelf: true,
               }
             : msg,
         ),
@@ -327,12 +311,12 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
       // Clear typing indicator
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current)
-        setTyping(chatId, false)
+        socket?.emit("groupTyping", { groupId, isTyping: false })
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error sending message:", error)
       toast.error("Failed to send message", {
-        description: "Please try again",
+        description: error.message || "Please try again",
       })
 
       // Remove the optimistic message on error
@@ -347,7 +331,7 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
 
   // Manual refresh function
   const handleManualRefresh = () => {
-    fetchMessages(false)
+    fetchGroupData(false)
   }
 
   const formatTime = (dateString: string) => {
@@ -370,26 +354,8 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
     groupedMessages[date].push(message)
   })
 
-  // Get conversation title and avatar
-  let conversationTitle = "Conversation"
-  let conversationAvatar = null
-  let otherParticipantId = null
-
-  if (chat) {
-    if (chat.isGroup) {
-      conversationTitle = chat.groupName || "Group Conversation"
-    } else {
-      const otherParticipant = chat.participants.find((p) => p._id !== user?.id)
-      if (otherParticipant) {
-        conversationTitle = otherParticipant.name || "Conversation"
-        conversationAvatar = otherParticipant.avatar
-        otherParticipantId = otherParticipant._id
-      }
-    }
-  }
-
-  // Check if other participant is online
-  const isOtherParticipantOnline = otherParticipantId ? onlineUsers.includes(otherParticipantId) : false
+  // Check if user is admin
+  const isAdmin = group?.admins.includes(user?.id || "")
 
   return (
     <div className="container max-w-4xl flex h-[calc(100vh-4rem)] flex-col py-6">
@@ -401,40 +367,129 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
             </Link>
           </Button>
           <div className="flex items-center gap-3">
-            {chat?.isGroup ? (
-              <Avatar className="h-10 w-10 bg-primary/10">
-                <AvatarFallback>G</AvatarFallback>
-              </Avatar>
-            ) : (
-              <div className="relative">
-                <Avatar className="h-10 w-10">
-                  <AvatarImage src={conversationAvatar || "/placeholder.svg?height=40&width=40"} />
-                  <AvatarFallback>{conversationTitle.charAt(0)}</AvatarFallback>
-                </Avatar>
-                {isOtherParticipantOnline && (
-                  <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-green-500 ring-2 ring-background"></span>
-                )}
-              </div>
-            )}
+            <Avatar className="h-10 w-10 bg-primary/10">
+              <AvatarFallback>{group?.name.charAt(0) || "G"}</AvatarFallback>
+            </Avatar>
             <div>
-              <h1 className="text-xl font-bold">{conversationTitle}</h1>
-              {!chat?.isGroup && (
-                <p className="text-xs text-muted-foreground">{isOtherParticipantOnline ? "Online" : "Offline"}</p>
-              )}
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold">{group?.name || "Group"}</h1>
+                <Badge variant="outline" className="capitalize">
+                  {group?.type || "group"}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">{group?.members.length || 0} members</p>
             </div>
           </div>
         </div>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleManualRefresh}
-          disabled={loading || refreshing}
-          className="h-9 w-9"
-        >
-          <RefreshCw className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`} />
-          <span className="sr-only">Refresh messages</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleManualRefresh}
+            disabled={loading || refreshing}
+            className="h-9 w-9"
+          >
+            <RefreshCw className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`} />
+            <span className="sr-only">Refresh messages</span>
+          </Button>
+
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Users className="h-4 w-4" />
+                <span className="hidden sm:inline">Members</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent>
+              <SheetHeader>
+                <SheetTitle>Group Members</SheetTitle>
+                <SheetDescription>{group?.members.length || 0} members in this group</SheetDescription>
+              </SheetHeader>
+              <div className="mt-6">
+                <ScrollArea className="h-[500px] pr-4">
+                  <div className="space-y-4">
+                    {group?.members.map((member) => {
+                      const isOnline = onlineUsers.includes(member._id)
+                      const memberIsAdmin = group.admins.includes(member._id)
+
+                      return (
+                        <div key={member._id} className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="relative">
+                              <Avatar>
+                                <AvatarImage src={member.avatar || "/placeholder.svg?height=40&width=40"} />
+                                <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
+                              </Avatar>
+                              {isOnline && (
+                                <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-green-500 ring-2 ring-background"></span>
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium">{member.name}</p>
+                                {memberIsAdmin && (
+                                  <Badge variant="outline" className="text-xs">
+                                    Admin
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">{isOnline ? "Online" : "Offline"}</p>
+                            </div>
+                          </div>
+
+                          {isAdmin && member._id !== user?.id && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {!memberIsAdmin && <DropdownMenuItem>Make Admin</DropdownMenuItem>}
+                                {memberIsAdmin && <DropdownMenuItem>Remove Admin</DropdownMenuItem>}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-destructive">Remove from Group</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </ScrollArea>
+              </div>
+            </SheetContent>
+          </Sheet>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <MoreVertical className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem className="gap-2">
+                <Info className="h-4 w-4" />
+                <span>Group Info</span>
+              </DropdownMenuItem>
+              {isAdmin && (
+                <DropdownMenuItem className="gap-2">
+                  <UserPlus className="h-4 w-4" />
+                  <span>Add Members</span>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem className="gap-2">
+                <Pin className="h-4 w-4" />
+                <span>Pinned Messages</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive gap-2">
+                <span>Leave Group</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {error && (
@@ -456,7 +511,7 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
               {refreshing && (
                 <div className="flex justify-center mb-2">
                   <div className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-xs text-primary">
-                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    <Loader2 className="h-3 w-3 animate-spin" />
                     <span>Syncing messages...</span>
                   </div>
                 </div>
@@ -475,13 +530,13 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
                         <div className={`flex max-w-[80%] gap-2 ${message.isSelf ? "flex-row-reverse" : "flex-row"}`}>
                           {!message.isSelf && (
                             <Avatar className="h-8 w-8">
-                              <AvatarImage src={message.senderAvatar || "/placeholder.svg?height=32&width=32"} />
-                              <AvatarFallback>{message.senderName?.charAt(0) || "?"}</AvatarFallback>
+                              <AvatarImage src={message.sender.avatar || "/placeholder.svg?height=32&width=32"} />
+                              <AvatarFallback>{message.sender.name?.charAt(0) || "?"}</AvatarFallback>
                             </Avatar>
                           )}
                           <div>
-                            {!message.isSelf && chat?.isGroup && (
-                              <p className="mb-1 text-xs text-muted-foreground">{message.senderName}</p>
+                            {!message.isSelf && (
+                              <p className="mb-1 text-xs text-muted-foreground">{message.sender.name}</p>
                             )}
                             <div
                               className={`rounded-lg p-3 ${
@@ -501,11 +556,7 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
 
                                 {message.isSelf && (
                                   <span className="text-xs">
-                                    {message.readBy && message.readBy.includes(otherParticipantId || "") ? (
-                                      <CheckCheck className="h-3 w-3 text-primary-foreground/70" />
-                                    ) : (
-                                      <Check className="h-3 w-3 text-primary-foreground/70" />
-                                    )}
+                                    <Check className="h-3 w-3 text-primary-foreground/70" />
                                   </span>
                                 )}
                               </div>
@@ -531,7 +582,9 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
                     ></div>
                   </div>
                   <span className="text-xs">
-                    {chat?.isGroup ? `${typingUsers.length} people typing...` : "Typing..."}
+                    {typingUsers.length > 1
+                      ? `${typingUsers.length} people typing...`
+                      : `${group?.members.find((m) => m._id === typingUsers[0])?.name || "Someone"} is typing...`}
                   </span>
                 </div>
               )}
