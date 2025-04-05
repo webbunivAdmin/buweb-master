@@ -9,10 +9,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent } from "@/components/ui/card"
-import { ArrowLeft, Paperclip, Send, User, Check, CheckCheck } from "lucide-react"
+import { AlertCircle, ArrowLeft, Check, CheckCheck, Loader2, Send } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 import { chatService } from "@/lib/api-service"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { use } from "react"
 
 interface Message {
   _id: string
@@ -38,7 +41,11 @@ interface Chat {
   groupName?: string
 }
 
-export default function ConversationPage({ params }: { params: { id: string } }) {
+export default function ConversationPage({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap params using React.use
+  const unwrappedParams = use(params)
+  const chatId = unwrappedParams.id
+
   const { user } = useAuth()
   const {
     socket,
@@ -49,30 +56,32 @@ export default function ConversationPage({ params }: { params: { id: string } })
     setTyping,
     markMessageAsRead,
   } = useSocket()
+
   const [chat, setChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
-  const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [typingUsers, setTypingUsers] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Join the chat room when component mounts
   useEffect(() => {
-    if (isConnected && params.id) {
-      joinChat(params.id)
+    if (isConnected && chatId) {
+      joinChat(chatId)
     }
-  }, [isConnected, params.id, joinChat])
+  }, [isConnected, chatId, joinChat])
 
   // Listen for new messages
   useEffect(() => {
-    if (!socket) return
+    if (!socket || !user) return
 
     const handleNewMessage = (message: any) => {
-      if (message.chatId === params.id) {
+      console.log("New message received:", message)
+
+      if (message.chatId === chatId) {
         const formattedMessage = {
           _id: message._id,
           sender: message.sender,
@@ -83,22 +92,28 @@ export default function ConversationPage({ params }: { params: { id: string } })
           senderName: message.senderName,
           senderAvatar: message.senderAvatar,
           readBy: message.readBy || [],
-          isSelf: message.sender === user?.id,
+          isSelf: message.sender === user.id,
         }
 
-        setMessages((prev) => [...prev, formattedMessage])
+        setMessages((prev) => {
+          // Check if message already exists to prevent duplicates
+          if (prev.some((m) => m._id === message._id)) {
+            return prev
+          }
+          return [...prev, formattedMessage]
+        })
 
         // Mark message as read if it's not from the current user
-        if (message.sender !== user?.id) {
-          markMessageAsRead(message._id, params.id)
-          chatService.markMessagesAsRead(params.id, user?.id || "")
+        if (message.sender !== user.id) {
+          markMessageAsRead(message._id, chatId)
+          chatService.markMessagesAsRead(chatId, user.id)
         }
       }
     }
 
-    const handleTypingUpdate = ({ chatId, typingUsers: users }: { chatId: string; typingUsers: string[] }) => {
-      if (chatId === params.id) {
-        setTypingUsers(users.filter((id) => id !== user?.id))
+    const handleTypingUpdate = ({ chatId: typingChatId, users }: { chatId: string; users: string[] }) => {
+      if (typingChatId === chatId) {
+        setTypingUsers(users.filter((id) => id !== user.id))
       }
     }
 
@@ -108,27 +123,36 @@ export default function ConversationPage({ params }: { params: { id: string } })
       )
     }
 
+    // Clean up any existing listeners before adding new ones
+    socket.off("newMessage").off("userTyping").off("messageRead")
+
+    // Add listeners
     socket.on("newMessage", handleNewMessage)
     socket.on("userTyping", handleTypingUpdate)
-    socket.on("messageReadUpdate", handleMessageReadUpdate)
+    socket.on("messageRead", handleMessageReadUpdate) // Make sure this matches the event name from the server
 
     return () => {
       socket.off("newMessage", handleNewMessage)
       socket.off("userTyping", handleTypingUpdate)
-      socket.off("messageReadUpdate", handleMessageReadUpdate)
+      socket.off("messageRead", handleMessageReadUpdate)
     }
-  }, [socket, params.id, user?.id, markMessageAsRead])
+  }, [socket, chatId, user, markMessageAsRead])
 
+  // Fetch chat and messages
   useEffect(() => {
     const fetchChat = async () => {
       if (!user) return
 
+      setLoading(true)
+      setError(null)
       try {
         // Fetch chat details
         const chatData = await chatService.getUserChats(user.id)
-        const currentChat = chatData.find((c: any) => c._id === params.id)
+        const currentChat = chatData.find((c: any) => c._id === chatId)
 
-        if (!currentChat) throw new Error("Chat not found")
+        if (!currentChat) {
+          throw new Error("Chat not found")
+        }
 
         setChat({
           _id: currentChat._id,
@@ -138,7 +162,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
         })
 
         // Fetch messages
-        const messagesData = await chatService.getChatMessages(params.id)
+        const messagesData = await chatService.getChatMessages(chatId)
 
         const formattedMessages = messagesData.map((message: any) => ({
           _id: message._id,
@@ -156,9 +180,10 @@ export default function ConversationPage({ params }: { params: { id: string } })
         setMessages(formattedMessages)
 
         // Mark all messages as read
-        await chatService.markMessagesAsRead(params.id, user.id)
+        await chatService.markMessagesAsRead(chatId, user.id)
       } catch (error) {
         console.error("Error fetching conversation:", error)
+        setError("Failed to load conversation. Please try again later.")
         toast.error("Failed to load conversation", {
           description: "Please try again later",
         })
@@ -168,30 +193,22 @@ export default function ConversationPage({ params }: { params: { id: string } })
     }
 
     fetchChat()
-  }, [user, params.id])
+  }, [user, chatId])
 
+  // Scroll to bottom when messages change
   useEffect(() => {
-    // Scroll to bottom when messages change
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
-
-  const handleFileSelect = () => {
-    fileInputRef.current?.click()
-  }
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0])
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" })
     }
-  }
+  }, [messages])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNewMessage(e.target.value)
 
     // Handle typing indicator
-    if (isConnected) {
+    if (isConnected && user) {
       // Send typing indicator
-      setTyping(params.id, true)
+      setTyping(chatId, true)
 
       // Clear previous timeout
       if (typingTimeoutRef.current) {
@@ -200,102 +217,87 @@ export default function ConversationPage({ params }: { params: { id: string } })
 
       // Set timeout to stop typing indicator after 2 seconds of inactivity
       typingTimeoutRef.current = setTimeout(() => {
-        setTyping(params.id, false)
+        setTyping(chatId, false)
       }, 2000)
     }
   }
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user || (!newMessage.trim() && !file) || !chat) return
+    if (!user || !newMessage.trim() || !chat) return
 
     setSending(true)
     try {
-      let fileUrl = null
-      let fileType = null
-
-      if (file) {
-        // Upload file
-        const formData = new FormData()
-        formData.append("file", file)
-        formData.append("chatId", chat._id)
-
-        const fileResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chats/upload`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-          body: formData,
-        })
-
-        if (!fileResponse.ok) throw new Error("Failed to upload file")
-
-        const fileData = await fileResponse.json()
-        fileUrl = fileData.fileUrl
-        fileType = fileData.fileType
-      }
-
+      // Prepare message data
       const messageData = {
         senderId: user.id,
         chatId: chat._id,
         content: newMessage.trim(),
-        fileUrl,
-        type: fileType,
-        senderName: user.name,
-        senderAvatar: user.avatar,
-        createdAt: new Date().toISOString(),
-        readBy: [user.id],
+        type: "text",
       }
 
-      // Send message to server
-      const data = await chatService.sendMessage({
-        senderId: user.id,
-        chatId: chat._id,
-        content: newMessage.trim(),
-        fileUrl,
-        type: fileType,
-      })
-
-      // Emit the message via socket
-      emitMessage({
-        ...messageData,
-        _id: data._id,
-        recipientId: chat.participants.find((p) => p._id !== user.id)?._id,
-      })
-
-      // Add the new message to the UI immediately
-      const newMessageObj = {
-        _id: data._id,
+      // Create optimistic message for immediate UI update
+      const optimisticMessage: Message = {
+        _id: `temp-${Date.now()}`,
         sender: user.id,
         content: newMessage.trim(),
         createdAt: new Date().toISOString(),
-        fileUrl,
-        type: fileType,
+        type: "text",
         senderName: user.name,
         senderAvatar: user.avatar,
         isSelf: true,
         readBy: [user.id],
       }
 
-      setMessages((prev) => [...prev, newMessageObj])
-      setNewMessage("")
-      setFile(null)
+      // Add optimistic message to UI
+      setMessages((prev) => [...prev, optimisticMessage])
 
-      // Clear the file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ""
-      }
+      // Clear input field immediately for better UX
+      setNewMessage("")
+
+      // Send message to server
+      const data = await chatService.sendMessage(messageData)
+
+      // Emit the message via socket
+      emitMessage({
+        ...messageData,
+        _id: data._id,
+        senderName: user.name,
+        senderAvatar: user.avatar,
+        createdAt: new Date().toISOString(),
+        readBy: [user.id],
+        recipientId: chat.participants.find((p) => p._id !== user.id)?._id,
+      })
+
+      // Replace optimistic message with real one
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg._id === optimisticMessage._id
+            ? {
+                ...msg,
+                _id: data._id,
+                createdAt: data.createdAt || msg.createdAt,
+              }
+            : msg,
+        ),
+      )
 
       // Clear typing indicator
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current)
-        setTyping(params.id, false)
+        setTyping(chatId, false)
       }
     } catch (error) {
       console.error("Error sending message:", error)
       toast.error("Failed to send message", {
         description: "Please try again",
       })
+
+      // Remove the optimistic message on error
+      setMessages((prev) => prev.filter((msg) => !msg._id.startsWith("temp-")))
+
+      // Restore the message to the input field
+      setNewMessage(newMessage)
     } finally {
       setSending(false)
     }
@@ -343,7 +345,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
   const isOtherParticipantOnline = otherParticipantId ? onlineUsers.includes(otherParticipantId) : false
 
   return (
-    <div className="container flex h-[calc(100vh-4rem)] flex-col py-6">
+    <div className="container max-w-4xl flex h-[calc(100vh-4rem)] flex-col py-6">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
@@ -353,9 +355,9 @@ export default function ConversationPage({ params }: { params: { id: string } })
           </Button>
           <div className="flex items-center gap-3">
             {chat?.isGroup ? (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                <User className="h-5 w-5 text-primary" />
-              </div>
+              <Avatar className="h-10 w-10 bg-primary/10">
+                <AvatarFallback>G</AvatarFallback>
+              </Avatar>
             ) : (
               <div className="relative">
                 <Avatar className="h-10 w-10">
@@ -377,6 +379,14 @@ export default function ConversationPage({ params }: { params: { id: string } })
         </div>
       </div>
 
+      {error && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
       <Card className="flex-1 overflow-hidden">
         <CardContent className="flex h-full flex-col p-0">
           {loading ? (
@@ -384,7 +394,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
             </div>
           ) : messages.length > 0 ? (
-            <div className="flex-1 overflow-y-auto p-4">
+            <ScrollArea className="flex-1 p-4">
               {Object.entries(groupedMessages).map(([date, dateMessages]) => (
                 <div key={date} className="mb-6">
                   <div className="mb-4 flex justify-center">
@@ -411,33 +421,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
                                 message.isSelf ? "bg-primary text-primary-foreground" : "bg-muted"
                               }`}
                             >
-                              {message.fileUrl && message.type === "image" && (
-                                <div className="mb-2">
-                                  <img
-                                    src={message.fileUrl || "/placeholder.svg"}
-                                    alt="Attachment"
-                                    className="max-h-60 rounded-md object-contain"
-                                  />
-                                </div>
-                              )}
-
-                              {message.fileUrl && message.type !== "image" && (
-                                <div className="mb-2">
-                                  <a
-                                    href={message.fileUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className={`flex items-center gap-2 rounded-md border p-2 ${
-                                      message.isSelf ? "border-primary-foreground/20" : "border-muted-foreground/20"
-                                    }`}
-                                  >
-                                    <Paperclip className="h-4 w-4" />
-                                    <span className="text-sm">Attachment</span>
-                                  </a>
-                                </div>
-                              )}
-
-                              {message.content && <p className="whitespace-pre-wrap break-words">{message.content}</p>}
+                              <p className="whitespace-pre-wrap break-words">{message.content}</p>
 
                               <div className="mt-1 flex items-center justify-end gap-1">
                                 <p
@@ -485,7 +469,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
                 </div>
               )}
               <div ref={messagesEndRef} />
-            </div>
+            </ScrollArea>
           ) : (
             <div className="flex h-full flex-col items-center justify-center p-4">
               <p className="text-center text-muted-foreground">No messages yet. Start the conversation!</p>
@@ -494,36 +478,22 @@ export default function ConversationPage({ params }: { params: { id: string } })
 
           <div className="border-t p-4">
             <form onSubmit={handleSendMessage} className="flex gap-2">
-              <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
-              <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={handleFileSelect}>
-                <Paperclip className="h-5 w-5" />
-              </Button>
               <Input
                 placeholder="Type a message..."
                 value={newMessage}
                 onChange={handleInputChange}
-                disabled={sending}
+                disabled={sending || loading}
+                className="focus-visible:ring-1"
               />
               <Button
                 type="submit"
                 size="icon"
-                disabled={(!newMessage.trim() && !file) || sending}
-                className="shrink-0"
+                disabled={!newMessage.trim() || sending || loading}
+                className="shrink-0 h-10 w-10"
               >
-                <Send className="h-5 w-5" />
+                {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
               </Button>
             </form>
-            {file && (
-              <div className="mt-2 flex items-center justify-between rounded-md border p-2">
-                <div className="flex items-center gap-2">
-                  <Paperclip className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm truncate max-w-[200px]">{file.name}</span>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => setFile(null)}>
-                  Remove
-                </Button>
-              </div>
-            )}
           </div>
         </CardContent>
       </Card>

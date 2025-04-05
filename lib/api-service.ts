@@ -7,23 +7,29 @@ const API = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  timeout: 15000, // 15 seconds timeout
 })
 
 // Add a request interceptor to include auth token in requests
-API.interceptors.request.use((config) => {
-  let token
+API.interceptors.request.use(
+  (config) => {
+    let token
 
-  // Check if we're in a browser environment
-  if (typeof window !== "undefined") {
-    // Try to get token from localStorage first, then from cookies
-    token = localStorage.getItem("token") || Cookies.get("token")
-  }
+    // Check if we're in a browser environment
+    if (typeof window !== "undefined") {
+      // Try to get token from localStorage first, then from cookies
+      token = localStorage.getItem("token") || Cookies.get("token")
+    }
 
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  },
+)
 
 // Add a response interceptor to handle auth errors
 API.interceptors.response.use(
@@ -42,7 +48,13 @@ API.interceptors.response.use(
         window.location.href = "/login"
       }
     }
-    return Promise.reject(error)
+
+    // Create a more informative error
+    const enhancedError = new Error(error.response?.data?.error || error.message || "An unknown error occurred") as any
+    (enhancedError as any).status = error.response?.status
+    enhancedError.data = error.response?.data
+
+    return Promise.reject(enhancedError)
   },
 )
 
@@ -94,52 +106,252 @@ export const announcementService = {
 
 // Chat Services
 export const chatService = {
-  startChat: async (userId1: string, userId2: string) => {
-    const response = await API.post("/chats/start", { userId1, userId2 })
-    return response.data
+  // Start a new chat between two users
+  startChat: async (data: { userId1: string; userId2: string }) => {
+    try {
+      console.log("API startChat called with:", data)
+
+      // Validate input
+      if (!data.userId1 || !data.userId2) {
+        throw new Error("Both user IDs are required")
+      }
+
+      const response = await API.post("/chats/start", data)
+      return response.data
+    } catch (error) {
+      console.error("Error in startChat:", error)
+      throw error
+    }
   },
 
-  sendMessage: async (messageData: any) => {
-    const response = await API.post("/chats/send", messageData)
-    return response.data
+  // Send a message in a chat
+  sendMessage: async (messageData: {
+    chatId: string
+    senderId: string
+    content: string
+    fileUrl?: string
+    type?: string
+  }) => {
+    try {
+      // Validate input
+      if (!messageData.chatId || !messageData.senderId || !messageData.content) {
+        throw new Error("Chat ID, sender ID, and content are required")
+      }
+
+      console.log("API sendMessage called with:", messageData)
+      const response = await API.post("/chats/send", messageData)
+      return response.data
+    } catch (error) {
+      console.error("Error in sendMessage:", error)
+      throw error
+    }
   },
 
-  getChatMessages: async (chatId: string) => {
-    const response = await API.get(`/chats/${chatId}/messages`)
-    return response.data
+  // Get messages for a chat
+  getChatMessages: async (chatId: string, page = 1, limit = 50) => {
+    try {
+      if (!chatId) {
+        throw new Error("Chat ID is required")
+      }
+
+      const response = await API.get(`/chats/${chatId}/messages`, {
+        params: { page, limit },
+      })
+      return response.data
+    } catch (error) {
+      console.error("Error in getChatMessages:", error)
+      throw error
+    }
   },
 
+  // Mark messages as read
   markMessagesAsRead: async (chatId: string, userId: string) => {
-    const response = await API.post("/chats/read", { chatId, userId })
-    return response.data
+    try {
+      if (!chatId || !userId) {
+        throw new Error("Chat ID and user ID are required")
+      }
+
+      const response = await API.post("/chats/read", { chatId, userId })
+      return response.data
+    } catch (error) {
+      console.error("Error in markMessagesAsRead:", error)
+      throw error
+    }
   },
 
+  // Get all chats for a user
   getUserChats: async (userId: string) => {
-    const response = await API.get(`/chats/user/${userId}`)
-    return response.data
+    try {
+      if (!userId) {
+        throw new Error("User ID is required")
+      }
+
+      const response = await API.get(`/chats/user/${userId}`)
+      return response.data
+    } catch (error) {
+      console.error("Error in getUserChats:", error)
+      throw error
+    }
   },
 
+  // Block a chat
   blockChat: async (chatId: string, userId: string) => {
-    const response = await API.post("/chats/block", { chatId, userId })
-    return response.data
+    try {
+      const response = await API.post("/chats/block", { chatId, userId })
+      return response.data
+    } catch (error) {
+      console.error("Error in blockChat:", error)
+      throw error
+    }
+  },
+
+  // Upload a file for a chat
+  uploadFile: async (file: File, chatId: string, senderId: string) => {
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("chatId", chatId)
+      formData.append("senderId", senderId)
+
+      const response = await API.post("/chats/upload", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      })
+      return response.data
+    } catch (error) {
+      console.error("Error in uploadFile:", error)
+      throw error
+    }
   },
 }
 
 // Group Services
 export const groupService = {
-  createGroup: async (groupData: any) => {
-    const response = await API.post("/groups/create", groupData)
-    return response.data
+  // Create a new group
+  createGroup: async (groupData: {
+    name: string
+    description?: string
+    type: string
+    adminId: string
+    members: string[]
+    initialMessage?: string
+  }) => {
+    try {
+      console.log("API createGroup called with:", groupData)
+      const response = await API.post("/groups/create", groupData)
+      return response.data
+    } catch (error) {
+      console.error("Error in createGroup:", error)
+      throw error
+    }
   },
 
-  sendGroupMessage: async (messageData: any) => {
-    const response = await API.post("/groups/send", messageData)
-    return response.data
+  // Send a message to a group
+  sendGroupMessage: async (messageData: {
+    groupId: string
+    senderId: string
+    content: string
+    fileUrl?: string
+    type?: string
+  }) => {
+    try {
+      const response = await API.post("/groups/send", messageData)
+      return response.data
+    } catch (error) {
+      console.error("Error in sendGroupMessage:", error)
+      throw error
+    }
   },
 
+  // Get all groups for a user
+  getUserGroups: async (userId: string) => {
+    try {
+      const response = await API.get(`/groups/user/${userId}`)
+      return response.data
+    } catch (error) {
+      console.error("Error in getUserGroups:", error)
+      throw error
+    }
+  },
+
+  // Get group details
+  getGroupDetails: async (groupId: string) => {
+    try {
+      const response = await API.get(`/groups/${groupId}`)
+      return response.data
+    } catch (error) {
+      console.error("Error in getGroupDetails:", error)
+      throw error
+    }
+  },
+
+  // Get messages for a group
+  getGroupMessages: async (groupId: string, page = 1, limit = 50) => {
+    try {
+      const response = await API.get(`/groups/${groupId}/messages`, {
+        params: { page, limit },
+      })
+      return response.data
+    } catch (error) {
+      console.error("Error in getGroupMessages:", error)
+      throw error
+    }
+  },
+
+  // Add members to a group
+  addGroupMembers: async (groupId: string, memberIds: string[]) => {
+    try {
+      const response = await API.post(`/groups/${groupId}/members`, { memberIds })
+      return response.data
+    } catch (error) {
+      console.error("Error in addGroupMembers:", error)
+      throw error
+    }
+  },
+
+  // Remove a member from a group
+  removeGroupMember: async (groupId: string, memberId: string) => {
+    try {
+      const response = await API.delete(`/groups/${groupId}/members/${memberId}`)
+      return response.data
+    } catch (error) {
+      console.error("Error in removeGroupMember:", error)
+      throw error
+    }
+  },
+
+  // Request to join a group
   requestToJoinGroup: async (userId: string, groupId: string) => {
-    const response = await API.post("/groups/request-join", { userId, groupId })
-    return response.data
+    try {
+      const response = await API.post("/groups/request-join", { userId, groupId })
+      return response.data
+    } catch (error) {
+      console.error("Error in requestToJoinGroup:", error)
+      throw error
+    }
+  },
+
+  // Approve a join request
+  approveJoinRequest: async (groupId: string, userId: string, adminId: string) => {
+    try {
+      const response = await API.post(`/groups/${groupId}/approve`, { userId, adminId })
+      return response.data
+    } catch (error) {
+      console.error("Error in approveJoinRequest:", error)
+      throw error
+    }
+  },
+
+  // Reject a join request
+  rejectJoinRequest: async (groupId: string, userId: string, adminId: string) => {
+    try {
+      const response = await API.post(`/groups/${groupId}/reject`, { userId, adminId })
+      return response.data
+    } catch (error) {
+      console.error("Error in rejectJoinRequest:", error)
+      throw error
+    }
   },
 }
 
