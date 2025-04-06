@@ -16,16 +16,23 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { eventService } from "@/lib/event-service"
-import { Checkbox } from "@/components/ui/checkbox"
 
-interface User {
+interface Event {
   _id: string
-  name: string
-  email: string
+  title: string
+  description: string
+  startTime: string
+  endTime: string
+  location: string | null
+  creatorId: string
+  isGeneral: boolean
+  type: string
+  reminderTimes: number[]
 }
 
-export default function NewEventPage() {
+export default function EditEventPage({ params }: { params: { id: string } }) {
   const { user } = useAuth()
+  const [event, setEvent] = useState<Event | null>(null)
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [location, setLocation] = useState("")
@@ -34,55 +41,70 @@ export default function NewEventPage() {
   const [endDate, setEndDate] = useState("")
   const [endTime, setEndTime] = useState("")
   const [eventType, setEventType] = useState("general")
+  const [isGeneral, setIsGeneral] = useState(false)
   const [addReminders, setAddReminders] = useState(false)
-  const [emailReminder, setEmailReminder] = useState(false)
-  const [pushReminder, setPushReminder] = useState(false)
-  const [smsReminder, setSmsReminder] = useState(false)
   const [reminderTime, setReminderTime] = useState("30")
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
-    const checkPermission = async () => {
+    const fetchEventAndUsers = async () => {
       if (!user) return
 
       setLoading(true)
       try {
-        // Check if user has permission to create events
-        if (user.role !== "Admin" && user.role !== "Faculty") {
+        // Fetch event details
+        const eventData = await eventService.getEventById(params.id)
+        setEvent(eventData)
+
+        // Check if user has permission to edit
+        if (eventData.creatorId !== user.id && user.role !== "Admin" && user.role !== "Faculty") {
           toast.error("Permission Denied", {
-            description: "You don't have permission to create events.",
+            description: "You don't have permission to edit this event.",
           })
-          router.push("/dashboard/calendar")
+          router.push(`/dashboard/calendar/${params.id}`)
           return
         }
 
-        // Set default dates and times
-        const now = new Date()
-        const tomorrow = new Date(now)
-        tomorrow.setDate(now.getDate() + 1)
+        // Set form values
+        setTitle(eventData.title)
+        setDescription(eventData.description)
+        setLocation(eventData.location || "")
+        setIsGeneral(eventData.isGeneral)
+        setEventType(eventData.type || "general")
 
-        setStartDate(now.toISOString().split("T")[0])
-        setStartTime("09:00")
-        setEndDate(now.toISOString().split("T")[0])
-        setEndTime("10:00")
+        // Set dates and times
+        const startDateTime = new Date(eventData.startTime)
+        const endDateTime = new Date(eventData.endTime)
+
+        setStartDate(startDateTime.toISOString().split("T")[0])
+        setStartTime(startDateTime.toTimeString().slice(0, 5))
+        setEndDate(endDateTime.toISOString().split("T")[0])
+        setEndTime(endDateTime.toTimeString().slice(0, 5))
+
+        // Set reminders
+        if (eventData.reminderTimes && eventData.reminderTimes.length > 0) {
+          setAddReminders(true)
+          setReminderTime(eventData.reminderTimes[0].toString())
+        }
       } catch (error) {
-        console.error("Error checking permission:", error)
-        toast.error("Failed to load data", {
+        console.error("Error fetching event:", error)
+        toast.error("Failed to load event", {
           description: "Please try again later",
         })
+        router.push("/dashboard/calendar")
       } finally {
         setLoading(false)
       }
     }
 
-    checkPermission()
-  }, [user, router])
+    fetchEventAndUsers()
+  }, [user, params.id, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user) return
+    if (!user || !event) return
 
     if (!title.trim() || !description.trim() || !startDate || !startTime || !endDate || !endTime) {
       toast.error("Please fill in all required fields")
@@ -106,21 +128,23 @@ export default function NewEventPage() {
       }
 
       const eventData = {
+        eventId: event._id,
         title,
         description,
         startTime: startDateTime.toISOString(),
         endTime: endDateTime.toISOString(),
         location: location || null,
-        isGeneral: eventType === "general",
+        isGeneral: user.role === "Admin" || user.role === "Faculty" ? isGeneral : event.isGeneral,
         type: eventType,
         reminderTimes: reminderTimes,
       }
-      const data = await eventService.createEvent(eventData)
-      toast.success("Event created successfully")
-      router.push(`/dashboard/calendar/${data.event._id}`)
+
+      const data = await eventService.updateEvent(eventData)
+      toast.success("Event updated successfully")
+      router.push(`/dashboard/calendar/${event._id}`)
     } catch (error) {
-      console.error("Error creating event:", error)
-      toast.error("Failed to create event", {
+      console.error("Error updating event:", error)
+      toast.error("Failed to update event", {
         description: "Please try again later",
       })
     } finally {
@@ -136,21 +160,34 @@ export default function NewEventPage() {
     )
   }
 
+  if (!event) {
+    return (
+      <div className="container py-6">
+        <div className="flex flex-col items-center justify-center gap-4 py-20">
+          <p className="text-center text-muted-foreground">Event not found</p>
+          <Button asChild>
+            <Link href="/dashboard/calendar">Back to Calendar</Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="container py-6">
       <div className="mb-6 flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
-          <Link href="/dashboard/calendar">
+          <Link href={`/dashboard/calendar/${event._id}`}>
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
-        <h1 className="text-2xl font-bold">New Event</h1>
+        <h1 className="text-2xl font-bold">Edit Event</h1>
       </div>
 
       <Card>
         <form onSubmit={handleSubmit}>
           <CardHeader>
-            <CardTitle>Create Event</CardTitle>
+            <CardTitle>Update Event</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -236,6 +273,13 @@ export default function NewEventPage() {
               </Select>
             </div>
 
+            {(user?.role === "Admin" || user?.role === "Faculty") && (
+              <div className="flex items-center space-x-2">
+                <Switch id="isGeneral" checked={isGeneral} onCheckedChange={setIsGeneral} />
+                <Label htmlFor="isGeneral">General Event (visible to all users)</Label>
+              </div>
+            )}
+
             <div className="space-y-4">
               <div className="flex items-center space-x-2">
                 <Switch id="addReminders" checked={addReminders} onCheckedChange={setAddReminders} />
@@ -259,43 +303,21 @@ export default function NewEventPage() {
                       </SelectContent>
                     </Select>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label>Reminder Methods</Label>
-                    <div className="space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="emailReminder"
-                          checked={emailReminder}
-                          onCheckedChange={(checked) => setEmailReminder(!!checked)}
-                        />
-                        <Label htmlFor="emailReminder">Email</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="pushReminder"
-                          checked={pushReminder}
-                          onCheckedChange={(checked) => setPushReminder(!!checked)}
-                        />
-                        <Label htmlFor="pushReminder">Push Notification</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="smsReminder"
-                          checked={smsReminder}
-                          onCheckedChange={(checked) => setSmsReminder(!!checked)}
-                        />
-                        <Label htmlFor="smsReminder">SMS</Label>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
           </CardContent>
           <CardFooter>
-            <Button type="submit" disabled={submitting} className="ml-auto">
-              {submitting ? "Creating..." : "Create Event"}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.push(`/dashboard/calendar/${event._id}`)}
+              className="mr-auto"
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Updating..." : "Update Event"}
             </Button>
           </CardFooter>
         </form>

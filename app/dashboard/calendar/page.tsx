@@ -15,10 +15,11 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth-provider"
+import { eventService } from "@/lib/event-service"
 
 export default function CalendarPage() {
   const { user } = useAuth()
-  const [isAdmin, setIsAdmin] = useState(user?.role === "admin" || user?.role === "faculty")
+  const [isAdmin, setIsAdmin] = useState(user?.role === "Admin" || user?.role === "Faculty")
   const [currentDate, setCurrentDate] = useState(new Date())
   const [events, setEvents] = useState<any[]>([])
   const [filteredEvents, setFilteredEvents] = useState<any[]>([])
@@ -35,17 +36,7 @@ export default function CalendarPage() {
 
       setIsLoading(true)
       try {
-        const response = await fetch("/api/events", {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        })
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch events")
-        }
-
-        const data = await response.json()
+        const data = await eventService.getAllEvents()
         const { generalEvents, userEvents } = data
 
         // Combine general and user events
@@ -91,17 +82,7 @@ export default function CalendarPage() {
 
   const handleDeleteEvent = async (eventId: string) => {
     try {
-      const response = await fetch(`/api/events/${eventId}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to delete event")
-      }
-
+      await eventService.deleteEvent(eventId)
       setEvents((prevEvents) => prevEvents.filter((event) => event._id !== eventId))
       toast.success("Event deleted successfully")
     } catch (error) {
@@ -114,46 +95,25 @@ export default function CalendarPage() {
     try {
       if (selectedEvent) {
         // Update existing event
-        const response = await fetch("/api/events", {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-          body: JSON.stringify({
-            eventId: selectedEvent._id,
-            ...eventData,
-          }),
+        const response = await eventService.updateEvent({
+          eventId: selectedEvent._id,
+          ...eventData,
         })
 
-        if (!response.ok) {
-          throw new Error("Failed to update event")
+        if (response.event) {
+          setEvents((prevEvents) =>
+            prevEvents.map((event) => (event._id === selectedEvent._id ? response.event : event)),
+          )
+          toast.success("Event updated successfully")
         }
-
-        const updatedEvent = await response.json()
-
-        setEvents((prevEvents) =>
-          prevEvents.map((event) => (event._id === selectedEvent._id ? updatedEvent.event : event)),
-        )
-        toast.success("Event updated successfully")
       } else {
         // Create new event
-        const response = await fetch("/api/events", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-          body: JSON.stringify(eventData),
-        })
+        const response = await eventService.createEvent(eventData)
 
-        if (!response.ok) {
-          throw new Error("Failed to create event")
+        if (response.event) {
+          setEvents((prevEvents) => [...prevEvents, response.event])
+          toast.success("Event created successfully")
         }
-
-        const data = await response.json()
-        setEvents((prevEvents) => [...prevEvents, data.event])
-        toast.success("Event created successfully")
       }
       setIsModalOpen(false)
     } catch (error) {
@@ -172,7 +132,7 @@ export default function CalendarPage() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h1 className="text-3xl font-bold">Calendar</h1>
 
-          {(user?.role === "admin" || user?.role === "faculty") && (
+          {(user?.role === "Admin" || user?.role === "Faculty") && (
             <div className="flex items-center gap-4">
               <div className="flex items-center space-x-2">
                 <Switch id="admin-mode" checked={isAdmin} onCheckedChange={toggleAdminView} />

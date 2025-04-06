@@ -20,26 +20,25 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { eventService } from "@/lib/api-service"
+import { eventService } from "@/lib/event-service"
 
 interface Event {
   _id: string
   title: string
   description: string
-  startDate: string
-  endDate: string
+  startTime: string
+  endTime: string
   location: string | null
-  createdBy: string
-  creatorName: string
-  isUniversityEvent: boolean
-  department: string | null
+  creatorId: string
+  isGeneral: boolean
+  type: string
+  reminderTimes: number[]
 }
 
 export default function EventPage({ params }: { params: { id: string } }) {
   const { user } = useAuth()
   const [event, setEvent] = useState<Event | null>(null)
   const [loading, setLoading] = useState(true)
-  const [userRole, setUserRole] = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -48,10 +47,6 @@ export default function EventPage({ params }: { params: { id: string } }) {
 
       setLoading(true)
       try {
-        // Get user role from auth context
-        setUserRole(user.role)
-
-        // Fetch event
         const data = await eventService.getEventById(params.id)
         setEvent(data)
       } catch (error) {
@@ -100,7 +95,8 @@ export default function EventPage({ params }: { params: { id: string } }) {
     }
   }
 
-  const canEditDelete = userRole === "admin" || (event && user && event.createdBy === user.id)
+  const canEditDelete =
+    user?.role === "Admin" || user?.role === "Faculty" || (event && user && event.creatorId === user.id)
 
   if (loading) {
     return (
@@ -167,8 +163,12 @@ export default function EventPage({ params }: { params: { id: string } }) {
       <Card>
         <CardHeader>
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            {event.isUniversityEvent && <Badge>University Event</Badge>}
-            {event.department && <Badge variant="outline">{event.department}</Badge>}
+            {event.isGeneral && <Badge>General Event</Badge>}
+            {event.type && event.type !== "general" && (
+              <Badge variant="outline" className="capitalize">
+                {event.type}
+              </Badge>
+            )}
           </div>
           <CardTitle className="text-2xl">{event.title}</CardTitle>
         </CardHeader>
@@ -179,9 +179,9 @@ export default function EventPage({ params }: { params: { id: string } }) {
               <div>
                 <div className="font-medium">Date</div>
                 <div className="text-muted-foreground">
-                  {formatDate(event.startDate)}
-                  {new Date(event.startDate).toDateString() !== new Date(event.endDate).toDateString() && (
-                    <> to {formatDate(event.endDate)}</>
+                  {formatDate(event.startTime)}
+                  {new Date(event.startTime).toDateString() !== new Date(event.endTime).toDateString() && (
+                    <> to {formatDate(event.endTime)}</>
                   )}
                 </div>
               </div>
@@ -192,7 +192,7 @@ export default function EventPage({ params }: { params: { id: string } }) {
               <div>
                 <div className="font-medium">Time</div>
                 <div className="text-muted-foreground">
-                  {formatTime(event.startDate)} - {formatTime(event.endDate)}
+                  {formatTime(event.startTime)} - {formatTime(event.endTime)}
                 </div>
               </div>
             </div>
@@ -211,7 +211,9 @@ export default function EventPage({ params }: { params: { id: string } }) {
               <User className="mt-0.5 h-5 w-5 text-muted-foreground" />
               <div>
                 <div className="font-medium">Organizer</div>
-                <div className="text-muted-foreground">{event.creatorName}</div>
+                <div className="text-muted-foreground">
+                  {user && user.id === event.creatorId ? "You" : "Event Creator"}
+                </div>
               </div>
             </div>
           </div>
