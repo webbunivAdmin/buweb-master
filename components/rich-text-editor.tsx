@@ -1,13 +1,14 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef } from "react"
+import { Bold, Code, Heading1, Heading2, Image, Italic, Link, List, ListOrdered, Quote, Undo } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { Bold, Italic, List, ListOrdered, LinkIcon, AlignLeft, AlignCenter, AlignRight } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { marked } from "marked"
 
 interface RichTextEditorProps {
   value: string
@@ -19,255 +20,234 @@ interface RichTextEditorProps {
 export default function RichTextEditor({
   value,
   onChange,
-  placeholder = "Write your content here...",
-  minHeight = "200px",
+  placeholder = "Write your content here... Use markdown for formatting.",
+  minHeight = "400px",
 }: RichTextEditorProps) {
+  const [activeTab, setActiveTab] = useState("write")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [linkUrl, setLinkUrl] = useState("")
-  const [linkText, setLinkText] = useState("")
-  const [isLinkPopoverOpen, setIsLinkPopoverOpen] = useState(false)
 
-  // Get the current selection in the textarea
-  const getSelection = () => {
+  const insertFormat = (format: string) => {
+    if (!textareaRef.current) return
+
     const textarea = textareaRef.current
-    if (!textarea) return { start: 0, end: 0, text: "" }
-
     const start = textarea.selectionStart
     const end = textarea.selectionEnd
-    const text = value.substring(start, end)
+    const selectedText = value.substring(start, end)
+    let newText = ""
 
-    return { start, end, text }
-  }
+    switch (format) {
+      case "bold":
+        newText = `**${selectedText || "bold text"}**`
+        break
+      case "italic":
+        newText = `*${selectedText || "italic text"}*`
+        break
+      case "h1":
+        newText = `\n# ${selectedText || "Heading 1"}\n`
+        break
+      case "h2":
+        newText = `\n## ${selectedText || "Heading 2"}\n`
+        break
+      case "link":
+        newText = `[${selectedText || "link text"}](https://example.com)`
+        break
+      case "image":
+        newText = `![${selectedText || "alt text"}](https://example.com/image.jpg)`
+        break
+      case "code":
+        newText = selectedText.includes("\n")
+          ? `\n\`\`\`\n${selectedText || "code block"}\n\`\`\`\n`
+          : `\`${selectedText || "inline code"}\``
+        break
+      case "quote":
+        newText = `\n> ${selectedText || "blockquote"}\n`
+        break
+      case "ul":
+        newText = `\n- ${selectedText || "list item"}\n`
+        break
+      case "ol":
+        newText = `\n1. ${selectedText || "list item"}\n`
+        break
+      default:
+        newText = selectedText
+    }
 
-  // Update the text with the formatted content
-  const updateText = (before: string, selected: string, after: string) => {
-    const { start, end } = getSelection()
-    const newValue = value.substring(0, start) + before + selected + after + value.substring(end)
-    onChange(newValue)
+    const newContent = value.substring(0, start) + newText + value.substring(end)
+    onChange(newContent)
 
-    // Focus back on textarea after update
+    // Set cursor position after the inserted text
     setTimeout(() => {
-      if (textareaRef.current) {
-        textareaRef.current.focus()
-        textareaRef.current.setSelectionRange(start + before.length, start + before.length + selected.length)
-      }
+      textarea.focus()
+      textarea.selectionStart = start + newText.length
+      textarea.selectionEnd = start + newText.length
     }, 0)
   }
 
-  // Format handlers
-  const handleBold = () => {
-    const { text } = getSelection()
-    updateText("**", text || "bold text", "**")
-  }
-
-  const handleItalic = () => {
-    const { text } = getSelection()
-    updateText("*", text || "italic text", "*")
-  }
-
-  const handleBulletList = () => {
-    const { text } = getSelection()
-    if (text) {
-      const lines = text.split("\n")
-      const bulletList = lines.map((line) => `- ${line}`).join("\n")
-      updateText("", bulletList, "")
-    } else {
-      updateText("- ", "List item", "\n")
+  // Use marked library for rendering markdown
+  const getHtmlContent = () => {
+    try {
+      return { __html: marked(value) }
+    } catch (error) {
+      return { __html: "<p>Error rendering preview</p>" }
     }
   }
-
-  const handleNumberedList = () => {
-    const { text } = getSelection()
-    if (text) {
-      const lines = text.split("\n")
-      const numberedList = lines.map((line, i) => `${i + 1}. ${line}`).join("\n")
-      updateText("", numberedList, "")
-    } else {
-      updateText("1. ", "List item", "\n")
-    }
-  }
-
-  const handleLink = () => {
-    if (linkUrl && linkText) {
-      updateText("[", linkText, `](${linkUrl})`)
-      setLinkUrl("")
-      setLinkText("")
-      setIsLinkPopoverOpen(false)
-    }
-  }
-
-  const handleAlignment = (alignment: "left" | "center" | "right") => {
-    const { text } = getSelection()
-
-    if (text) {
-      let alignedText = ""
-
-      switch (alignment) {
-        case "center":
-          alignedText = `<div style="text-align: center;">${text}</div>`
-          break
-        case "right":
-          alignedText = `<div style="text-align: right;">${text}</div>`
-          break
-        default:
-          alignedText = text // Left is default
-      }
-
-      updateText("", alignedText, "")
-    }
-  }
-
-  // Set initial link text from selection
-  useEffect(() => {
-    if (isLinkPopoverOpen) {
-      const { text } = getSelection()
-      if (text) {
-        setLinkText(text)
-      }
-    }
-  }, [isLinkPopoverOpen])
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-1 rounded-md border bg-background p-1">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button type="button" variant="ghost" size="icon" onClick={handleBold} className="h-8 w-8">
-                <Bold className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Bold</TooltipContent>
-          </Tooltip>
+    <Card className="border shadow-sm">
+      <CardContent className="p-0">
+        <Tabs defaultValue="write" value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="flex items-center border-b px-4 py-2">
+            <h2 className="text-lg font-semibold mr-auto">Editor</h2>
+            <TabsList className="grid grid-cols-2 w-[200px]">
+              <TabsTrigger value="write">Write</TabsTrigger>
+              <TabsTrigger value="preview">Preview</TabsTrigger>
+            </TabsList>
+          </div>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button type="button" variant="ghost" size="icon" onClick={handleItalic} className="h-8 w-8">
-                <Italic className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Italic</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button type="button" variant="ghost" size="icon" onClick={handleBulletList} className="h-8 w-8">
-                <List className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Bullet List</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button type="button" variant="ghost" size="icon" onClick={handleNumberedList} className="h-8 w-8">
-                <ListOrdered className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Numbered List</TooltipContent>
-          </Tooltip>
-
-          <Popover open={isLinkPopoverOpen} onOpenChange={setIsLinkPopoverOpen}>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <PopoverTrigger asChild>
-                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8">
-                      <LinkIcon className="h-4 w-4" />
+          <TabsContent value="write" className="m-0">
+            <div className="border-b p-2 flex flex-wrap gap-1">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={() => insertFormat("h1")}>
+                      <Heading1 className="h-4 w-4" />
                     </Button>
-                  </PopoverTrigger>
-                </TooltipTrigger>
-                <TooltipContent>Insert Link</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+                  </TooltipTrigger>
+                  <TooltipContent>Heading 1</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
 
-            <PopoverContent className="w-80">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="link-text">Link Text</Label>
-                  <Input
-                    id="link-text"
-                    value={linkText}
-                    onChange={(e) => setLinkText(e.target.value)}
-                    placeholder="Enter link text"
-                  />
-                </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={() => insertFormat("h2")}>
+                      <Heading2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Heading 2</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
 
-                <div className="space-y-2">
-                  <Label htmlFor="link-url">URL</Label>
-                  <Input
-                    id="link-url"
-                    value={linkUrl}
-                    onChange={(e) => setLinkUrl(e.target.value)}
-                    placeholder="https://example.com"
-                  />
-                </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={() => insertFormat("bold")}>
+                      <Bold className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Bold</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
 
-                <Button type="button" onClick={handleLink} disabled={!linkUrl || !linkText} className="w-full">
-                  Insert Link
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={() => insertFormat("italic")}>
+                      <Italic className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Italic</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
 
-          <div className="mx-1 h-6 w-px bg-border" />
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={() => insertFormat("link")}>
+                      <Link className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Link</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => handleAlignment("left")}
-                className="h-8 w-8"
-              >
-                <AlignLeft className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Align Left</TooltipContent>
-          </Tooltip>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={() => insertFormat("image")}>
+                      <Image className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Image</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => handleAlignment("center")}
-                className="h-8 w-8"
-              >
-                <AlignCenter className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Align Center</TooltipContent>
-          </Tooltip>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={() => insertFormat("code")}>
+                      <Code className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Code</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => handleAlignment("right")}
-                className="h-8 w-8"
-              >
-                <AlignRight className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Align Right</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={() => insertFormat("quote")}>
+                      <Quote className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Quote</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
 
-      <Textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="min-h-[200px] font-mono"
-        style={{ minHeight }}
-      />
-    </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={() => insertFormat("ul")}>
+                      <List className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Bullet List</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={() => insertFormat("ol")}>
+                      <ListOrdered className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Numbered List</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={() => onChange("")}>
+                      <Undo className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Clear</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+
+            <Textarea
+              ref={textareaRef}
+              placeholder={placeholder}
+              className="min-h-[400px] p-4 border-0 rounded-none focus-visible:ring-0 resize-none"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              style={{ minHeight }}
+            />
+          </TabsContent>
+
+          <TabsContent value="preview" className="m-0 min-h-[400px] p-4">
+            {value ? (
+              <div className="prose max-w-none" dangerouslySetInnerHTML={getHtmlContent()} />
+            ) : (
+              <div className="text-muted-foreground text-center py-20">Your preview will appear here</div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+    </Card>
   )
 }
 

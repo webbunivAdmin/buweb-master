@@ -269,7 +269,7 @@ export default function AnnouncementPage({ params }: { params: { id: string } })
           )}
 
           {/* Render content as HTML from markdown */}
-          <div className="prose max-w-none dark:prose-invert" dangerouslySetInnerHTML={getHtmlContent()} />
+          <div className="prose prose-lg max-w-none dark:prose-invert" dangerouslySetInnerHTML={getHtmlContent()} />
 
           {/* File attachment section */}
           {announcement.fileUrl && (

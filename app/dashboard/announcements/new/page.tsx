@@ -13,19 +13,16 @@ import { useRouter } from "next/navigation"
 import { Label } from "@/components/ui/label"
 import { announcementService } from "@/lib/api-service"
 import { toast } from "sonner"
-import FileUploadPreview from "@/components/file-upload-preview"
+import FileUpload from "@/components/file-upload"
 import RichTextEditor from "@/components/rich-text-editor"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { marked } from "marked"
 
 export default function NewAnnouncementPage() {
   const { user } = useAuth()
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
-  const [fileData, setFileData] = useState<any>(null)
+  const [fileData, setFileData] = useState<{ url: string; type: string; name: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [previewTab, setPreviewTab] = useState("edit")
   const router = useRouter()
 
   useEffect(() => {
@@ -52,8 +49,8 @@ export default function NewAnnouncementPage() {
     checkPermission()
   }, [user, router])
 
-  const handleFileUpload = (data: { file: File; preview: string | null; type: string }) => {
-    setFileData(data)
+  const handleFileUpload = (data: { url: string; type: string; name: string }) => {
+    setFileData(data.url ? data : null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -71,7 +68,9 @@ export default function NewAnnouncementPage() {
         title,
         content,
         postedBy: user.id,
-        fileData: fileData, // Pass the file data to the service
+        fileUrl: fileData?.url,
+        fileType: fileData?.type,
+        fileName: fileData?.name,
       }
 
       const data = await announcementService.createAnnouncement(announcementData)
@@ -86,15 +85,6 @@ export default function NewAnnouncementPage() {
       })
     } finally {
       setSubmitting(false)
-    }
-  }
-
-  // Convert markdown to HTML for preview
-  const getHtmlContent = () => {
-    try {
-      return { __html: marked(content) }
-    } catch (error) {
-      return { __html: "<p>Error rendering preview</p>" }
     }
   }
 
@@ -136,31 +126,17 @@ export default function NewAnnouncementPage() {
 
             <div className="space-y-2">
               <Label htmlFor="content">Content</Label>
-              <Tabs value={previewTab} onValueChange={setPreviewTab}>
-                <TabsList className="mb-2">
-                  <TabsTrigger value="edit">Edit</TabsTrigger>
-                  <TabsTrigger value="preview">Preview</TabsTrigger>
-                </TabsList>
-                <TabsContent value="edit">
-                  <RichTextEditor
-                    value={content}
-                    onChange={setContent}
-                    placeholder="Write your announcement content here..."
-                    minHeight="300px"
-                  />
-                </TabsContent>
-                <TabsContent value="preview">
-                  <div
-                    className="min-h-[300px] rounded-md border bg-card p-4 prose max-w-none dark:prose-invert"
-                    dangerouslySetInnerHTML={getHtmlContent()}
-                  />
-                </TabsContent>
-              </Tabs>
+              <RichTextEditor
+                value={content}
+                onChange={setContent}
+                placeholder="Write your announcement content here... Use markdown for formatting."
+                minHeight="400px"
+              />
             </div>
 
             <div className="space-y-2">
-              <Label>Attachment (Optional)</Label>
-              <FileUploadPreview onFileUpload={handleFileUpload} />
+              <Label>Attachment</Label>
+              <FileUpload onFileUpload={handleFileUpload} />
             </div>
           </CardContent>
           <CardFooter>
