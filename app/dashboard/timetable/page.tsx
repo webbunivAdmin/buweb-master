@@ -46,7 +46,7 @@ export default function TimetableDashboard() {
     fetchData()
   }, [user])
 
-  const isAdmin = user?.role === "admin" || user?.role === "faculty"
+  const isAdmin = user?.role === "Admin" || user?.role === "Faculty"
 
   return (
     <div className="container py-6">
