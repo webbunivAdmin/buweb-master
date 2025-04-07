@@ -58,7 +58,7 @@ export default function DashboardPage() {
         setAnnouncements(announcementsData.slice(0, 3))
 
         // Fetch recent messages - this endpoint isn't explicitly shown in your API
-        const messagesResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/messages/recent`)
+        const messagesResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/messages/${user.id}`)
         if (!messagesResponse.ok) throw new Error("Failed to fetch messages")
         const messagesData = await messagesResponse.json()
         setMessages(messagesData.slice(0, 3))
