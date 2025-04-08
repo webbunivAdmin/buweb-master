@@ -46,11 +46,19 @@ import {
   setMinutes,
 } from "date-fns"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Timetable } from "@/types/timetable"
+import { Course } from "@/types/courses"
+
+interface SelectChangeHandler {
+    (name: string, value: string): void;
+}
+
+interface InputChangeEvent extends React.ChangeEvent<HTMLInputElement> {}
 
 export default function TimetablesPage() {
   const { user } = useAuth()
-  const [timetables, setTimetables] = useState([])
-  const [courses, setCourses] = useState([])
+  const [timetables, setTimetables] = useState<Timetable[]>([])
+  const [courses, setCourses] = useState<Course[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -92,62 +100,90 @@ export default function TimetablesPage() {
     fetchData()
   }, [])
 
-  const handleInputChange = (e) => {
+
+const handleInputChange = (e: InputChangeEvent) => {
     const { name, value, type, checked } = e.target
     setFormData((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
+        ...prev,
+        [name]: type === "checkbox" ? checked : value,
     }))
-  }
+}
 
-  const handleSelectChange = (name, value) => {
-    setFormData((prev) => ({ ...prev, [name]: value }))
-  }
 
-  const handleFilterChange = (name, value) => {
-    setFilters((prev) => ({ ...prev, [name]: value }))
-  }
+const handleSelectChange: SelectChangeHandler = (name, value) => {
+    setFormData((prev) => ({ ...prev, [name]: value }));
+};
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+interface FilterChangeHandler {
+    (name: keyof typeof filters, value: string): void;
+}
+
+const handleFilterChange: FilterChangeHandler = (name, value) => {
+    setFilters((prev) => ({ ...prev, [name]: value }));
+};
+
+interface FormData {
+    course: string;
+    classType: string;
+    startTime: string;
+    endTime: string;
+    location: string;
+    repeatsWeekly: boolean;
+    endDate: string;
+}
+
+interface TimetablePayload {
+    course: string;
+    classType: string;
+    startTime: string;
+    endTime: string;
+    location: string;
+    repeatsWeekly: boolean;
+    endDate?: string;
+    students: string[];
+}
+
+const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault();
 
     if (!formData.course || !formData.startTime || !formData.endTime || !formData.location) {
-      toast.error("Please fill in all required fields")
-      return
+        toast.error("Please fill in all required fields");
+        return;
     }
 
     try {
-      const selectedCourse = courses.find((c) => c.id === formData.course)
+        const selectedCourse = courses.find((c) => c._id === formData.course);
 
-      await timetableService.createTimetable({
-        course: formData.course,
-        lecturer: selectedCourse.lecturer,
-        classType: formData.classType,
-        startTime: new Date(formData.startTime).toISOString(),
-        endTime: new Date(formData.endTime).toISOString(),
-        location: formData.location,
-        repeatsWeekly: formData.repeatsWeekly,
-        endDate: formData.endDate ? new Date(formData.endDate).toISOString() : undefined,
-        students: selectedCourse.students,
-      })
+        const payload: TimetablePayload = {
+            course: formData.course,
+            classType: formData.classType,
+            startTime: new Date(formData.startTime).toISOString(),
+            endTime: new Date(formData.endTime).toISOString(),
+            location: formData.location,
+            repeatsWeekly: formData.repeatsWeekly,
+            endDate: formData.endDate ? new Date(formData.endDate).toISOString() : undefined,
+            students: selectedCourse?.students.map((student) => student.id) || [],
+        };
 
-      toast.success("Class added successfully")
-      setIsDialogOpen(false)
-      setFormData({
-        course: "",
-        classType: "lecture",
-        startTime: "",
-        endTime: "",
-        location: "",
-        repeatsWeekly: false,
-        endDate: "",
-      })
-      fetchData()
+        await timetableService.createTimetable(payload);
+
+        toast.success("Class added successfully");
+        setIsDialogOpen(false);
+        setFormData({
+            course: "",
+            classType: "lecture",
+            startTime: "",
+            endTime: "",
+            location: "",
+            repeatsWeekly: false,
+            endDate: "",
+        });
+        fetchData();
     } catch (error) {
-      console.error("Error creating class:", error)
-      toast.error("Failed to create class")
+        console.error("Error creating class:", error);
+        toast.error("Failed to create class");
     }
-  }
+};
 
   const canCreateClass = user && (user.role === "Admin" || user.role === "lecturer")
 
@@ -159,7 +195,7 @@ export default function TimetablesPage() {
     if (searchQuery.trim() !== "") {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter((timetable) => {
-        const course = courses.find((c) => c.id === timetable.course)
+        const course = courses.find((c) => c._id === timetable.course)
         return (
           (course && course.name.toLowerCase().includes(query)) ||
           (course && course.code.toLowerCase().includes(query)) ||
@@ -183,22 +219,26 @@ export default function TimetablesPage() {
   }, [timetables, searchQuery, filters, courses])
 
   // Group timetables by day for weekly view
-  const groupByDay = (timetables) => {
-    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-    const grouped = {}
+interface GroupedTimetables {
+    [day: string]: Timetable[];
+}
+
+const groupByDay = (timetables: Timetable[]): GroupedTimetables => {
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const grouped: GroupedTimetables = {};
 
     days.forEach((day) => {
-      grouped[day] = []
-    })
+        grouped[day] = [];
+    });
 
     timetables.forEach((timetable) => {
-      const date = new Date(timetable.startTime)
-      const day = days[date.getDay()]
-      grouped[day].push(timetable)
-    })
+        const date = new Date(timetable.startTime);
+        const day = days[date.getDay()];
+        grouped[day].push(timetable);
+    });
 
-    return grouped
-  }
+    return grouped;
+};
 
   const weeklyTimetable = groupByDay(filteredTimetables)
 
@@ -257,57 +297,82 @@ export default function TimetablesPage() {
   }
 
   // Get timetables for a specific date
-  const getTimetablesForDate = (date) => {
+interface GetTimetablesForDate {
+    (date: Date): Timetable[];
+}
+
+const getTimetablesForDate: GetTimetablesForDate = (date) => {
     return filteredTimetables.filter((timetable) => {
-      const timetableDate = parseISO(timetable.startTime)
-      return isSameDay(timetableDate, date)
-    })
-  }
+        const timetableDate = parseISO(timetable.startTime);
+        return isSameDay(timetableDate, date);
+    });
+};
 
   // Get timetables for a specific time slot in day view
-  const getTimetablesForTimeSlot = (date, hour) => {
-    const startTime = setHours(setMinutes(date, 0), hour)
-    const endTime = setHours(setMinutes(date, 59), hour)
+interface GetTimetablesForTimeSlot {
+    (date: Date, hour: number): Timetable[];
+}
+
+const getTimetablesForTimeSlot: GetTimetablesForTimeSlot = (date, hour) => {
+    const startTime = setHours(setMinutes(date, 0), hour);
+    const endTime = setHours(setMinutes(date, 59), hour);
 
     return filteredTimetables.filter((timetable) => {
-      const timetableStart = parseISO(timetable.startTime)
-      const timetableEnd = parseISO(timetable.endTime)
+        const timetableStart = parseISO(timetable.startTime);
+        const timetableEnd = parseISO(timetable.endTime);
 
-      return (
-        isSameDay(timetableStart, date) &&
-        (getHours(timetableStart) === hour ||
-          (getHours(timetableStart) < hour && getHours(timetableEnd) > hour) ||
-          (getHours(timetableStart) < hour && getHours(timetableEnd) === hour && getMinutes(timetableEnd) > 0))
-      )
-    })
-  }
+        return (
+            isSameDay(timetableStart, date) &&
+            (getHours(timetableStart) === hour ||
+                (getHours(timetableStart) < hour && getHours(timetableEnd) > hour) ||
+                (getHours(timetableStart) < hour && getHours(timetableEnd) === hour && getMinutes(timetableEnd) > 0))
+        );
+    });
+};
 
   // Calculate the height of a timetable event based on its duration
-  const calculateEventHeight = (timetable) => {
-    const start = parseISO(timetable.startTime)
-    const end = parseISO(timetable.endTime)
-    const durationInMinutes = (end.getTime() - start.getTime()) / (1000 * 60)
-    return Math.max((durationInMinutes / 60) * 4, 1) + "rem" // 4rem per hour
-  }
+interface TimetableEvent {
+    startTime: string;
+    endTime: string;
+}
+
+const calculateEventHeight = (timetable: TimetableEvent): string => {
+    const start = parseISO(timetable.startTime);
+    const end = parseISO(timetable.endTime);
+    const durationInMinutes = (end.getTime() - start.getTime()) / (1000 * 60);
+    return Math.max((durationInMinutes / 60) * 4, 1) + "rem"; // 4rem per hour
+};
 
   // Calculate the top position of a timetable event based on its start time
-  const calculateEventTop = (timetable) => {
-    const start = parseISO(timetable.startTime)
-    const hour = getHours(start)
-    const minutes = getMinutes(start)
-    return hour * 4 + (minutes / 60) * 4 + "rem" // 4rem per hour
-  }
+interface CalculateEventTop {
+    (timetable: TimetableEvent): string;
+}
+
+const calculateEventTop: CalculateEventTop = (timetable) => {
+    const start = parseISO(timetable.startTime);
+    const hour = getHours(start);
+    const minutes = getMinutes(start);
+    return hour * 4 + (minutes / 60) * 4 + "rem"; // 4rem per hour
+};
 
   // Calculate the width and left position of a timetable event in week view
-  const calculateEventWidth = (timetable, date) => {
-    // For simplicity, we'll make all events the same width
-    return "90%"
-  }
+interface CalculateEventWidth {
+    (timetable: Timetable, date: Date): string;
+}
 
-  const calculateEventLeft = (timetable, date) => {
+const calculateEventWidth: CalculateEventWidth = (timetable, date) => {
+    // For simplicity, we'll make all events the same width
+    return "90%";
+};
+
+interface CalculateEventLeft {
+    (timetable: Timetable, date: Date): string;
+}
+
+const calculateEventLeft: CalculateEventLeft = (timetable, date) => {
     // For simplicity, we'll center all events
-    return "5%"
-  }
+    return "5%";
+};
 
   // Generate time slots for day and week views
   const timeSlots = Array.from({ length: 14 }, (_, i) => i + 8) // 8 AM to 9 PM
@@ -359,7 +424,7 @@ export default function TimetablesPage() {
                       </SelectTrigger>
                       <SelectContent>
                         {courses.map((course) => (
-                          <SelectItem key={course.id} value={course.id}>
+                          <SelectItem key={course._id} value={course._id}>
                             {course.name} ({course.code})
                           </SelectItem>
                         ))}
@@ -438,7 +503,7 @@ export default function TimetablesPage() {
                         id="repeatsWeekly"
                         name="repeatsWeekly"
                         checked={formData.repeatsWeekly}
-                        onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, repeatsWeekly: checked }))}
+                        onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, repeatsWeekly: !!checked }))}
                       />
                       <Label htmlFor="repeatsWeekly" className="text-sm font-normal">
                         This class repeats weekly
@@ -506,7 +571,7 @@ export default function TimetablesPage() {
                   <SelectContent>
                     <SelectItem value="all">All Courses</SelectItem>
                     {courses.map((course) => (
-                      <SelectItem key={course.id} value={course.id}>
+                      <SelectItem key={course._id} value={course._id}>
                         {course.name}
                       </SelectItem>
                     ))}
@@ -605,9 +670,9 @@ export default function TimetablesPage() {
                             </div>
                             <div className="absolute top-0 left-0 w-full h-full">
                               {getTimetablesForTimeSlot(currentDate, hour).map((timetable) => {
-                                const course = courses.find((c) => c.id === timetable.course)
+                                const course = courses.find((c) => c._id === timetable.course)
                                 return (
-                                  <Link href={`/dashboard/timetables/${timetable.id}`} key={timetable.id}>
+                                  <Link href={`/dashboard/timetables/${timetable._id}`} key={timetable._id}>
                                     <div
                                       className="absolute rounded-md p-2 bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-colors overflow-hidden"
                                       style={{
@@ -669,9 +734,9 @@ export default function TimetablesPage() {
                                 )}
                                 <div className="absolute top-0 left-0 w-full h-full">
                                   {getTimetablesForTimeSlot(date, hour).map((timetable) => {
-                                    const course = courses.find((c) => c.id === timetable.course)
+                                    const course = courses.find((c) => c._id === timetable.course)
                                     return (
-                                      <Link href={`/dashboard/timetables/${timetable.id}`} key={timetable.id}>
+                                      <Link href={`/dashboard/timetables/${timetable._id}`} key={timetable._id}>
                                         <div
                                           className="absolute rounded-md p-1 bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-colors overflow-hidden"
                                           style={{
@@ -727,9 +792,9 @@ export default function TimetablesPage() {
                               </div>
                               <div className="space-y-1 max-h-20 overflow-y-auto">
                                 {dayTimetables.slice(0, 3).map((timetable) => {
-                                  const course = courses.find((c) => c.id === timetable.course)
+                                  const course = courses.find((c) => c._id === timetable.course)
                                   return (
-                                    <Link href={`/dashboard/timetables/${timetable.id}`} key={timetable.id}>
+                                    <Link href={`/dashboard/timetables/${timetable._id}`} key={timetable._id}>
                                       <div className="text-xs p-1 rounded bg-primary/10 border border-primary/20 truncate hover:bg-primary/20 transition-colors">
                                         <div className="font-medium truncate">{course?.name || "Unnamed Course"}</div>
                                         <div className="text-xs text-muted-foreground truncate">
@@ -779,11 +844,11 @@ export default function TimetablesPage() {
                   .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
                   .slice(0, 9)
                   .map((timetable) => (
-                    <Link href={`/dashboard/timetables/${timetable.id}`} key={timetable.id}>
+                    <Link href={`/dashboard/timetables/${timetable._id}`} key={timetable._id}>
                       <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
                         <CardHeader>
                           <CardTitle>
-                            {courses.find((c) => c.id === timetable.course)?.name || "Unnamed Course"}
+                            {courses.find((c) => c._id === timetable.course)?.name || "Unnamed Course"}
                           </CardTitle>
                           <CardDescription className="capitalize">{timetable.classType}</CardDescription>
                         </CardHeader>
@@ -833,11 +898,11 @@ export default function TimetablesPage() {
                           return timeA - timeB
                         })
                         .map((timetable) => (
-                          <Link href={`/dashboard/timetables/${timetable.id}`} key={timetable.id}>
+                          <Link href={`/dashboard/timetables/${timetable._id}`} key={timetable._id}>
                             <div className="flex items-center p-3 rounded-md border hover:bg-muted/50 transition-colors cursor-pointer">
                               <div className="flex-1">
                                 <p className="font-medium">
-                                  {courses.find((c) => c.id === timetable.course)?.name || "Unnamed Course"}
+                                  {courses.find((c) => c._id === timetable.course)?.name || "Unnamed Course"}
                                 </p>
                                 <p className="text-sm text-muted-foreground capitalize">{timetable.classType}</p>
                               </div>
@@ -881,11 +946,11 @@ export default function TimetablesPage() {
               : filteredTimetables
                   .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
                   .map((timetable) => (
-                    <Link href={`/dashboard/timetables/${timetable.id}`} key={timetable.id}>
+                    <Link href={`/dashboard/timetables/${timetable._id}`} key={timetable._id}>
                       <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
                         <CardHeader>
                           <CardTitle>
-                            {courses.find((c) => c.id === timetable.course)?.name || "Unnamed Course"}
+                            {courses.find((c) => c._id === timetable.course)?.name || "Unnamed Course"}
                           </CardTitle>
                           <CardDescription className="capitalize">{timetable.classType}</CardDescription>
                         </CardHeader>

@@ -27,12 +27,60 @@ import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { eventService } from "@/lib/event-service"
+import { Timetable } from "@/types/timetable"
+import { Course as BaseCourse, User } from "@/types/courses"
+import { authService } from "@/lib/api-service"
+
+interface Course extends BaseCourse {
+  lecturer?: string; // Add lecturer property to the Course type
+}
+
+interface TimetableData {
+    course: string;
+    lecturer?: string;
+    classType: string;
+    startTime: string;
+    endTime: string;
+    location: string;
+    repeatsWeekly: boolean;
+    endDate?: string;
+    students: User[];
+    classRepresentatives: string[];
+    notes: string;
+    isOnline: boolean;
+}
+
+interface EventData {
+    title: string;
+    description: string;
+    location: string;
+    startTime: string;
+    endTime: string;
+    allDay: boolean;
+    repeatsWeekly: boolean;
+    endDate?: string;
+    metadata: {
+        timetableId: string;
+        courseId: string;
+        classType: string;
+        isOnline: boolean;
+    };
+}
+
+interface ToggleClassRepSelectionParams {
+    studentId: string;
+}
+
+interface ToggleStudentSelectionParams {
+    studentId: string;
+}
+
 
 export default function ClassesPage() {
   const { user } = useAuth()
-  const [courses, setCourses] = useState([])
-  const [timetables, setTimetables] = useState([])
-  const [filteredTimetables, setFilteredTimetables] = useState([])
+  const [courses, setCourses] = useState<Course[]>([])
+  const [timetables, setTimetables] = useState<Timetable[]>([])
+  const [filteredTimetables, setFilteredTimetables] = useState<Timetable[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -43,7 +91,7 @@ export default function ClassesPage() {
   })
   const [formData, setFormData] = useState({
     course: "",
-    classType: "lecture",
+    classType: "online",
     startTime: "",
     endTime: "",
     location: "",
@@ -55,57 +103,32 @@ export default function ClassesPage() {
     notes: "",
     isOnline: false,
   })
-  const [availableStudents, setAvailableStudents] = useState([])
-  const [selectedStudents, setSelectedStudents] = useState([])
-  const [selectedClassReps, setSelectedClassReps] = useState([])
+  const [availableStudents, setAvailableStudents] = useState<User[]>([])
+  const [selectedStudents, setSelectedStudents] = useState<User[]>([])
+  const [selectedClassReps, setSelectedClassReps] = useState<string[]>([])
   const [studentSearchQuery, setStudentSearchQuery] = useState("")
-  const [originalStudentsList, setOriginalStudentsList] = useState([])
-  const [availableLecturers, setAvailableLecturers] = useState([])
-  const [originalLecturersList, setOriginalLecturersList] = useState([])
+  const [originalStudentsList, setOriginalStudentsList] = useState<User[]>([])
+  const [availableLecturers, setAvailableLecturers] = useState<User[]>([])
+  const [originalLecturersList, setOriginalLecturersList] = useState<User[]>([])
   const [lecturerSearchQuery, setLecturerSearchQuery] = useState("")
 
   const fetchData = async () => {
     try {
       setIsLoading(true)
-      const [coursesData, timetablesData] = await Promise.all([
+      const [coursesData, timetablesData, userData] = await Promise.all([
         courseService.getAllCourses(),
         timetableService.getAllTimetables(),
+        authService.getUsers(),
       ])
 
       setCourses(coursesData)
       setTimetables(timetablesData)
       setFilteredTimetables(timetablesData)
 
-      // Mock student data - in a real app, you would fetch this from your API
-      const mockStudents = [
-        { id: "s1", name: "John Doe", email: "john@example.com", registrationNumber: "S12345" },
-        { id: "s2", name: "Jane Smith", email: "jane@example.com", registrationNumber: "S12346" },
-        { id: "s3", name: "Bob Johnson", email: "bob@example.com", registrationNumber: "S12347" },
-        { id: "s4", name: "Alice Williams", email: "alice@example.com", registrationNumber: "S12348" },
-        { id: "s5", name: "Charlie Brown", email: "charlie@example.com", registrationNumber: "S12349" },
-        { id: "s6", name: "David Miller", email: "david@example.com", registrationNumber: "S12350" },
-        { id: "s7", name: "Emma Wilson", email: "emma@example.com", registrationNumber: "S12351" },
-        { id: "s8", name: "Frank Thomas", email: "frank@example.com", registrationNumber: "S12352" },
-        { id: "s9", name: "Grace Lee", email: "grace@example.com", registrationNumber: "S12353" },
-        { id: "s10", name: "Henry Garcia", email: "henry@example.com", registrationNumber: "S12354" },
-      ]
-
-      // Mock lecturer data - in a real app, you would fetch this from your API
-      const mockLecturers = [
-        { id: "l1", name: "Dr. Smith", email: "smith@university.edu", department: "Computer Science" },
-        { id: "l2", name: "Prof. Johnson", email: "johnson@university.edu", department: "Engineering" },
-        { id: "l3", name: "Dr. Williams", email: "williams@university.edu", department: "Mathematics" },
-        { id: "l4", name: "Prof. Davis", email: "davis@university.edu", department: "Physics" },
-        { id: "l5", name: "Dr. Miller", email: "miller@university.edu", department: "Chemistry" },
-        { id: "l6", name: "Prof. Wilson", email: "wilson@university.edu", department: "Biology" },
-        { id: "l7", name: "Dr. Moore", email: "moore@university.edu", department: "Business" },
-        { id: "l8", name: "Prof. Taylor", email: "taylor@university.edu", department: "Economics" },
-      ]
-
-      setAvailableStudents(mockStudents)
-      setOriginalStudentsList(mockStudents)
-      setAvailableLecturers(mockLecturers)
-      setOriginalLecturersList(mockLecturers)
+      setAvailableStudents(userData)
+      setOriginalStudentsList(userData)
+      setAvailableLecturers(userData)
+      setOriginalLecturersList(userData)
     } catch (error) {
       console.error("Error fetching data:", error)
       toast.error("Failed to load class data")
@@ -129,7 +152,7 @@ export default function ClassesPage() {
     if (searchQuery.trim() !== "") {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter((timetable) => {
-        const course = courses.find((c) => c.id === timetable.course)
+        const course = courses.find((c) => c._id === timetable.course)
         return (
           (course && course.name.toLowerCase().includes(query)) ||
           (course && course.code.toLowerCase().includes(query)) ||
@@ -179,125 +202,141 @@ export default function ClassesPage() {
     setFilteredTimetables(filtered)
   }
 
-  const handleInputChange = (e) => {
+type InputChangeEvent = React.ChangeEvent<HTMLInputElement>;
+
+const handleInputChange = (e: InputChangeEvent) => {
     const { name, value, type, checked } = e.target
     setFormData((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
+        ...prev,
+        [name]: type === "checkbox" ? checked : value,
     }))
-  }
+}
 
-  const handleSelectChange = (name, value) => {
-    setFormData((prev) => ({ ...prev, [name]: value }))
+interface HandleSelectChangeParams {
+    name: keyof typeof formData;
+    value: string;
+}
 
-    // If course is selected, populate students from that course
-    if (name === "course") {
-      const selectedCourse = courses.find((c) => c.id === value)
-      if (selectedCourse && selectedCourse.students) {
-        setSelectedStudents(selectedCourse.students)
-      } else {
-        setSelectedStudents([])
-      }
+    const handleSelectChange = ({ name, value }: HandleSelectChangeParams) => {
+        setFormData((prev) => ({ ...prev, [name]: value }));
 
-      // Set lecturer from course
-      if (selectedCourse && selectedCourse.lecturer) {
-        setFormData((prev) => ({ ...prev, lecturer: selectedCourse.lecturer }))
-      }
-    }
-  }
+        // If course is selected, populate students from that course
+        if (name === "course") {
+            const selectedCourse = courses.find((c) => c._id === value);
+            if (selectedCourse && selectedCourse.students) {
+                setSelectedStudents(selectedCourse.students);
+            } else {
+                if (selectedCourse?.lecturer) {
+                }
 
-  const handleFilterChange = (name, value) => {
-    setFilters((prev) => ({ ...prev, [name]: value }))
-  }
-
-  const toggleStudentSelection = (studentId) => {
-    setSelectedStudents((prev) => {
-      if (prev.includes(studentId)) {
-        return prev.filter((id) => id !== studentId)
-      } else {
-        return [...prev, studentId]
-      }
-    })
-  }
-
-  const toggleClassRepSelection = (studentId) => {
-    setSelectedClassReps((prev) => {
-      if (prev.includes(studentId)) {
-        return prev.filter((id) => id !== studentId)
-      } else {
-        return [...prev, studentId]
-      }
-    })
-  }
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-
-    if (!formData.course || !formData.startTime || !formData.endTime || !formData.location) {
-      toast.error("Please fill in all required fields")
-      return
+            // Set lecturer from course
+                if (selectedCourse && selectedCourse.lecturer) {
+                    setFormData((prev) => ({ ...prev, lecturer: selectedCourse.lecturer || "" }));
+                }
+            }
+        };
     }
 
-    try {
-      const selectedCourse = courses.find((c) => c.id === formData.course)
+interface FilterChangeParams {
+    name: keyof typeof filters;
+    value: string;
+}
 
-      // Create timetable entry
-      const timetableData = {
-        course: formData.course,
-        lecturer: formData.lecturer || selectedCourse.lecturer,
-        classType: formData.classType,
-        startTime: new Date(formData.startTime).toISOString(),
-        endTime: new Date(formData.endTime).toISOString(),
-        location: formData.location,
-        repeatsWeekly: formData.repeatsWeekly,
-        endDate: formData.endDate ? new Date(formData.endDate).toISOString() : undefined,
-        students: selectedStudents,
-        classRepresentatives: selectedClassReps,
-        notes: formData.notes,
-        isOnline: formData.isOnline,
-      }
+    const handleFilterChange = ({ name, value }: FilterChangeParams) => {
+        setFilters((prev) => ({ ...prev, [name]: value }))
+    }
 
-      const newTimetable = await timetableService.createTimetable(timetableData)
+    const toggleStudentSelection = ({ studentId }: ToggleStudentSelectionParams) => {
+        setSelectedStudents((prev: User[]) => {
+            if (prev.some((student) => student._id === studentId)) {
+                return prev.filter((student) => student._id !== studentId);
+            } else {
+                const studentToAdd = availableStudents.find((student) => student._id === studentId);
+                return studentToAdd ? [...prev, studentToAdd] : prev;
+            }
+        });
+    };
 
-      // Create calendar event
-      try {
-        const eventData = {
-          title: `${selectedCourse.name} - ${formData.classType.charAt(0).toUpperCase() + formData.classType.slice(1)}`,
-          description: formData.notes || `${selectedCourse.code} ${formData.classType}`,
-          location: formData.location,
-          startTime: formData.startTime,
-          endTime: formData.endTime,
-          allDay: false,
-          repeatsWeekly: formData.repeatsWeekly,
-          endDate: formData.endDate,
-          metadata: {
-            timetableId: newTimetable.id,
-            courseId: formData.course,
-            classType: formData.classType,
-            isOnline: formData.isOnline,
-          },
+
+    const toggleClassRepSelection = ({ studentId }: ToggleClassRepSelectionParams) => {
+        setSelectedClassReps((prev: string[]) => {
+            if (prev.includes(studentId)) {
+                return prev.filter((_id) => _id !== studentId);
+            } else {
+                return [...prev, studentId];
+            }
+        });
+    };
+
+
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+
+        if (!formData.course || !formData.startTime || !formData.endTime || !formData.location) {
+            toast.error("Please fill in all required fields");
+            return;
         }
 
-        await eventService.createEvent(eventData)
-      } catch (error) {
-        console.error("Error creating calendar event:", error)
-        // Continue even if event creation fails
-      }
+        try {
+            const selectedCourse = courses.find((c) => c._id === formData.course);
 
-      toast.success("Class created successfully")
-      setIsDialogOpen(false)
-      resetForm()
-      fetchData()
-    } catch (error) {
-      console.error("Error creating class:", error)
-      toast.error("Failed to create class")
-    }
-  }
+            // Create timetable entry
+            const timetableData: TimetableData = {
+                course: formData.course,
+                lecturer: formData.lecturer || selectedCourse?.lecturer,
+                classType: formData.classType,
+                startTime: new Date(formData.startTime).toISOString(),
+                endTime: new Date(formData.endTime).toISOString(),
+                location: formData.location,
+                repeatsWeekly: formData.repeatsWeekly,
+                endDate: formData.endDate ? new Date(formData.endDate).toISOString() : undefined,
+                students: selectedStudents, // Ensure students is of type User[]
+                classRepresentatives: selectedClassReps,
+                notes: formData.notes,
+                isOnline: formData.isOnline,
+            };
+
+            const newTimetable = await timetableService.createTimetable(timetableData);
+
+            // Create calendar event
+            try {
+                const eventData: EventData = {
+                    title: `${selectedCourse?.name} - ${formData.classType.charAt(0).toUpperCase() + formData.classType.slice(1)}`,
+                    description: formData.notes || `${selectedCourse?.code} ${formData.classType}`,
+                    location: formData.location,
+                    startTime: formData.startTime,
+                    endTime: formData.endTime,
+                    allDay: false,
+                    repeatsWeekly: formData.repeatsWeekly,
+                    endDate: formData.endDate,
+                    metadata: {
+                        timetableId: newTimetable.id,
+                        courseId: formData.course,
+                        classType: formData.classType,
+                        isOnline: formData.isOnline,
+                    },
+                };
+
+                await eventService.createEvent(eventData);
+            } catch (error) {
+                console.error("Error creating calendar event:", error);
+                // Continue even if event creation fails
+            }
+
+            toast.success("Class created successfully");
+            setIsDialogOpen(false);
+            resetForm();
+            fetchData();
+        } catch (error) {
+            console.error("Error creating class:", error);
+            toast.error("Failed to create class");
+        }
+    };
 
   const resetForm = () => {
     setFormData({
       course: "",
-      classType: "lecture",
+      classType: "online",
       startTime: "",
       endTime: "",
       location: "",
@@ -346,7 +385,7 @@ export default function ClassesPage() {
                       <Select
                         name="course"
                         value={formData.course}
-                        onValueChange={(value) => handleSelectChange("course", value)}
+                        onValueChange={(value) => handleSelectChange({ name: "course", value: value })}
                         required
                       >
                         <SelectTrigger>
@@ -354,7 +393,7 @@ export default function ClassesPage() {
                         </SelectTrigger>
                         <SelectContent>
                           {courses.map((course) => (
-                            <SelectItem key={course.id} value={course.id}>
+                            <SelectItem key={course._id} value={course._id}>
                               {course.name} ({course.code})
                             </SelectItem>
                           ))}
@@ -366,18 +405,15 @@ export default function ClassesPage() {
                       <Select
                         name="classType"
                         value={formData.classType}
-                        onValueChange={(value) => handleSelectChange("classType", value)}
+                        onValueChange={(value) => handleSelectChange({ name: "classType", value })}
                         required
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select class type" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="lecture">Lecture</SelectItem>
-                          <SelectItem value="tutorial">Tutorial</SelectItem>
-                          <SelectItem value="lab">Lab</SelectItem>
-                          <SelectItem value="seminar">Seminar</SelectItem>
-                          <SelectItem value="workshop">Workshop</SelectItem>
+                          <SelectItem value="online">Online</SelectItem>
+                          <SelectItem value="offline">Offline</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -449,11 +485,11 @@ export default function ClassesPage() {
                             <div className="p-1">
                               {availableLecturers.map((lecturer) => (
                                 <div
-                                  key={lecturer.id}
+                                  key={lecturer._id}
                                   className={`flex items-center p-2 rounded-md cursor-pointer hover:bg-muted ${
-                                    formData.lecturer === lecturer.id ? "bg-muted" : ""
+                                    formData.lecturer === lecturer._id ? "bg-muted" : ""
                                   }`}
-                                  onClick={() => handleSelectChange("lecturer", lecturer.id)}
+                                  onClick={() => handleSelectChange({ name: "lecturer", value: lecturer._id })}
                                 >
                                   <div className="flex-1 min-w-0">
                                     <p className="font-medium">{lecturer.name}</p>
@@ -462,7 +498,7 @@ export default function ClassesPage() {
                                     </p>
                                   </div>
                                   <div className="ml-2">
-                                    {formData.lecturer === lecturer.id && (
+                                    {formData.lecturer === lecturer._id && (
                                       <div className="h-2 w-2 rounded-full bg-primary"></div>
                                     )}
                                   </div>
@@ -482,7 +518,7 @@ export default function ClassesPage() {
                         id="repeatsWeekly"
                         name="repeatsWeekly"
                         checked={formData.repeatsWeekly}
-                        onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, repeatsWeekly: checked }))}
+                        onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, repeatsWeekly: Boolean(checked) }))}
                       />
                       <Label htmlFor="repeatsWeekly">This class repeats weekly</Label>
                     </div>
@@ -491,7 +527,7 @@ export default function ClassesPage() {
                         id="isOnline"
                         name="isOnline"
                         checked={formData.isOnline}
-                        onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, isOnline: checked }))}
+                        onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, isOnline: Boolean(checked) }))}
                       />
                       <Label htmlFor="isOnline">This is an online class</Label>
                     </div>
@@ -540,7 +576,7 @@ export default function ClassesPage() {
                             const filtered = originalStudentsList.filter(
                               (student) =>
                                 student.name.toLowerCase().includes(query) ||
-                                student.registrationNumber.toLowerCase().includes(query) ||
+                                student.registrationNumber?.toLowerCase().includes(query) ||
                                 student.email.toLowerCase().includes(query),
                             )
                             setAvailableStudents(filtered)
@@ -559,12 +595,12 @@ export default function ClassesPage() {
                               variant="ghost"
                               size="sm"
                               onClick={() => {
-                                const allIds = availableStudents.map((s) => s.id)
+                                const allIds = availableStudents.map((s) => s._id)
                                 if (selectedStudents.length === allIds.length) {
                                   setSelectedStudents([])
                                   setSelectedClassReps([])
                                 } else {
-                                  setSelectedStudents(allIds)
+                                  setSelectedStudents(allIds.map((id) => availableStudents.find((student) => student._id === id)!).filter(Boolean) as User[])
                                 }
                               }}
                             >
@@ -577,18 +613,18 @@ export default function ClassesPage() {
 
                           {availableStudents.map((student) => (
                             <div
-                              key={student.id}
+                              key={student._id}
                               className="flex flex-col sm:flex-row sm:items-center gap-2 py-2 border-b last:border-0"
                             >
                               <div className="flex items-center flex-1 min-w-0">
                                 <Checkbox
-                                  id={`student-${student.id}`}
-                                  checked={selectedStudents.includes(student.id)}
-                                  onCheckedChange={() => toggleStudentSelection(student.id)}
+                                  id={`student-${student._id}`}
+                                  checked={selectedStudents.some((selectedStudent) => selectedStudent._id === student._id)}
+                                  onCheckedChange={() => toggleStudentSelection({ studentId: student._id })}
                                   className="mr-2"
                                 />
                                 <div className="truncate">
-                                  <Label htmlFor={`student-${student.id}`} className="font-medium cursor-pointer">
+                                  <Label htmlFor={`student-${student._id}`} className="font-medium cursor-pointer">
                                     {student.name}
                                   </Label>
                                   <p className="text-xs text-muted-foreground truncate">
@@ -598,12 +634,12 @@ export default function ClassesPage() {
                               </div>
                               <div className="flex items-center space-x-2 ml-7 sm:ml-0">
                                 <Checkbox
-                                  id={`rep-${student.id}`}
-                                  checked={selectedClassReps.includes(student.id)}
-                                  onCheckedChange={() => toggleClassRepSelection(student.id)}
-                                  disabled={!selectedStudents.includes(student.id)}
+                                  id={`rep-${student._id}`}
+                                  checked={selectedClassReps.includes(student._id)}
+                                  onCheckedChange={() => toggleClassRepSelection({ studentId: student._id })}
+                                  disabled={!selectedStudents.some((selectedStudent) => selectedStudent._id === student._id)}
                                 />
-                                <Label htmlFor={`rep-${student.id}`} className="text-sm whitespace-nowrap">
+                                <Label htmlFor={`rep-${student._id}`} className="text-sm whitespace-nowrap">
                                   Class Rep
                                 </Label>
                               </div>
@@ -660,14 +696,14 @@ export default function ClassesPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="courseFilter">Course</Label>
-                <Select value={filters.courseId} onValueChange={(value) => handleFilterChange("courseId", value)}>
+                <Select value={filters.courseId} onValueChange={(value) => handleFilterChange({ name: "courseId", value })}>
                   <SelectTrigger id="courseFilter">
                     <SelectValue placeholder="All Courses" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Courses</SelectItem>
                     {courses.map((course) => (
-                      <SelectItem key={course.id} value={course.id}>
+                      <SelectItem key={course._id} value={course._id}>
                         {course.name}
                       </SelectItem>
                     ))}
@@ -677,7 +713,7 @@ export default function ClassesPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="classTypeFilter">Class Type</Label>
-                <Select value={filters.classType} onValueChange={(value) => handleFilterChange("classType", value)}>
+                <Select value={filters.classType} onValueChange={(value) => handleFilterChange({ name: "classType", value })}>
                   <SelectTrigger id="classTypeFilter">
                     <SelectValue placeholder="All Types" />
                   </SelectTrigger>
@@ -694,7 +730,7 @@ export default function ClassesPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="dateRangeFilter">Date Range</Label>
-                <Select value={filters.dateRange} onValueChange={(value) => handleFilterChange("dateRange", value)}>
+                <Select value={filters.dateRange} onValueChange={(value) => handleFilterChange({ name: "dateRange", value })}>
                   <SelectTrigger id="dateRangeFilter">
                     <SelectValue placeholder="All Dates" />
                   </SelectTrigger>
@@ -757,11 +793,11 @@ export default function ClassesPage() {
               filteredTimetables
                 .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
                 .map((timetable) => {
-                  const course = courses.find((c) => c.id === timetable.course)
+                  const course = courses.find((c) => c._id === timetable.course)
                   const isPast = new Date(timetable.endTime) < new Date()
 
                   return (
-                    <Link href={`/dashboard/classes/${timetable.id}`} key={timetable.id}>
+                    <Link href={`/dashboard/classes/${timetable._id}`} key={timetable._id}>
                       <Card
                         className={`hover:bg-muted/50 transition-colors cursor-pointer ${isPast ? "opacity-70" : ""}`}
                       >
@@ -845,11 +881,11 @@ export default function ClassesPage() {
                   {filteredTimetables
                     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
                     .map((timetable) => {
-                      const course = courses.find((c) => c.id === timetable.course)
+                      const course = courses.find((c) => c._id === timetable.course)
                       const isPast = new Date(timetable.endTime) < new Date()
 
                       return (
-                        <Link href={`/dashboard/classes/${timetable.id}`} key={timetable.id}>
+                        <Link href={`/dashboard/classes/${timetable._id}`} key={timetable._id}>
                           <div
                             className={`flex items-center p-3 rounded-md border hover:bg-muted/50 transition-colors cursor-pointer ${isPast ? "opacity-70" : ""}`}
                           >
@@ -915,3 +951,4 @@ export default function ClassesPage() {
     </div>
   )
 }
+

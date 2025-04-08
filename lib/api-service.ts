@@ -99,6 +99,11 @@ export const authService = {
     const response = await API.post("/auth/reset-password", { resetToken, newPassword })
     return response.data
   },
+
+  getUsers: async () => {
+    const response = await API.get("/users")
+    return response.data
+  }
 }
 
 // Announcement Services

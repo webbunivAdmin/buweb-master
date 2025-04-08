@@ -31,7 +31,6 @@ export const courseService = {
     code: string
     description?: string
     department: string
-    lecturer: string
     students?: string[]
   }) => {
     try {

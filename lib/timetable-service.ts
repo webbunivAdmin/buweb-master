@@ -28,7 +28,6 @@ export const timetableService = {
   // Create a new timetable
   createTimetable: async (timetableData: {
     course: string
-    lecturer: string
     classType: string
     startTime: Date | string
     endTime: Date | string
