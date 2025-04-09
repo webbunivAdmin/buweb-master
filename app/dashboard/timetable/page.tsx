@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import type React from "react"
 
 import { useState, useEffect, useMemo } from "react"
 import { useAuth } from "@/lib/auth-provider"
@@ -24,7 +24,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
-import { CalendarIcon, ChevronLeft, ChevronRight, Clock, Filter, MapPin, Plus, Search, User } from "lucide-react"
+import {
+  CalendarIcon,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Filter,
+  Globe,
+  MapPin,
+  Plus,
+  Search,
+  User,
+  Wifi,
+} from "lucide-react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -47,6 +59,8 @@ import {
   isSameMonth,
   isToday,
   differenceInMinutes,
+  isBefore,
+  getDay,
 } from "date-fns"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -71,6 +85,7 @@ export default function TimetablesPage() {
     location: "",
     repeatsWeekly: false,
     endDate: "",
+    isOnline: false,
   })
   const [calendarView, setCalendarView] = useState("week") // day, week, month
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -78,6 +93,7 @@ export default function TimetablesPage() {
   const [filters, setFilters] = useState({
     courseId: "",
     classType: "",
+    isOnline: "",
   })
   const [selectedEvent, setSelectedEvent] = useState<Timetable | null>(null)
   const [showEventDetails, setShowEventDetails] = useState(false)
@@ -130,6 +146,7 @@ export default function TimetablesPage() {
     location: string
     repeatsWeekly: boolean
     endDate: string
+    isOnline: boolean
   }
 
   interface TimetablePayload {
@@ -141,6 +158,7 @@ export default function TimetablesPage() {
     repeatsWeekly: boolean
     endDate?: string
     students: string[]
+    isOnline: boolean
   }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -163,6 +181,7 @@ export default function TimetablesPage() {
         repeatsWeekly: formData.repeatsWeekly,
         endDate: formData.endDate ? new Date(formData.endDate).toISOString() : undefined,
         students: selectedCourse?.students.map((student) => student.id) || [],
+        isOnline: formData.isOnline,
       }
 
       await timetableService.createTimetable(payload)
@@ -177,6 +196,7 @@ export default function TimetablesPage() {
         location: "",
         repeatsWeekly: false,
         endDate: "",
+        isOnline: false,
       })
       fetchData()
     } catch (error) {
@@ -186,6 +206,54 @@ export default function TimetablesPage() {
   }
 
   const canCreateClass = user && (user.role === "Admin" || user.role === "lecturer")
+
+  // Generate recurring instances of weekly events
+  const expandRecurringEvents = (timetables: Timetable[]): Timetable[] => {
+    const expandedTimetables: Timetable[] = []
+
+    timetables.forEach((timetable) => {
+      // Add the original event
+      expandedTimetables.push(timetable)
+
+      // If it repeats weekly and has an end date, generate recurring instances
+      if (timetable.repeatsWeekly && timetable.endDate) {
+        const startDate = parseISO(timetable.startTime)
+        const endDate = parseISO(timetable.endDate)
+        const dayOfWeek = getDay(startDate)
+
+        let currentDate = addWeeks(startDate, 1) // Start from next week
+
+        while (isBefore(currentDate, endDate)) {
+          if (getDay(currentDate) === dayOfWeek) {
+            // Calculate time difference between start and end time
+            const originalStartTime = parseISO(timetable.startTime)
+            const originalEndTime = parseISO(timetable.endTime)
+            const durationMs = originalEndTime.getTime() - originalStartTime.getTime()
+
+            // Create a new instance with the same time on the current date
+            const newStartTime = new Date(currentDate)
+            newStartTime.setHours(originalStartTime.getHours(), originalStartTime.getMinutes())
+
+            const newEndTime = new Date(newStartTime.getTime() + durationMs)
+
+            const recurringInstance = {
+              ...timetable,
+              _id: `${timetable._id}-${format(currentDate, "yyyy-MM-dd")}`,
+              startTime: newStartTime.toISOString(),
+              endTime: newEndTime.toISOString(),
+              isRecurring: true,
+            }
+
+            expandedTimetables.push(recurringInstance)
+          }
+
+          currentDate = addDays(currentDate, 1)
+        }
+      }
+    })
+
+    return expandedTimetables
+  }
 
   // Filter timetables based on search and filters
   const filteredTimetables = useMemo(() => {
@@ -215,7 +283,15 @@ export default function TimetablesPage() {
       filtered = filtered.filter((timetable) => timetable.classType === filters.classType)
     }
 
-    return filtered
+    // Apply online/offline filter
+    if (filters.isOnline === "online") {
+      filtered = filtered.filter((timetable) => timetable.isOnline)
+    } else if (filters.isOnline === "offline") {
+      filtered = filtered.filter((timetable) => !timetable.isOnline)
+    }
+
+    // Expand recurring events
+    return expandRecurringEvents(filtered)
   }, [timetables, searchQuery, filters, courses])
 
   // Group timetables by day for weekly view
@@ -336,7 +412,7 @@ export default function TimetablesPage() {
     const start = parseISO(timetable.startTime)
     const end = parseISO(timetable.endTime)
     const durationInMinutes = (end.getTime() - start.getTime()) / (1000 * 60)
-    return Math.max((durationInMinutes / 60) * 4, 1) + "rem" // 4rem per hour
+    return Math.max((durationInMinutes / 60) * 6, 1) + "rem" // 6rem per hour
   }
 
   // Calculate the top position of a timetable event based on its start time
@@ -347,7 +423,7 @@ export default function TimetablesPage() {
     const hour = getHours(start)
     const minutes = getMinutes(start)
     // Adjust for the starting hour of the calendar (8am)
-    return (hour - 8) * 4 + (minutes / 60) * 4 + "rem" // 4rem per hour
+    return (hour - 8) * 6 + (minutes / 60) * 6 + "rem" // 6rem per hour
   }
 
   // Calculate the width and left position of a timetable event in week view
@@ -414,39 +490,30 @@ export default function TimetablesPage() {
     }
   }
 
-  // Get color for event based on class type
-  const getEventColor = (classType: string) => {
-    switch (classType.toLowerCase()) {
-      case "lecture":
-        return "bg-blue-100 border-blue-300 hover:bg-blue-200"
-      case "tutorial":
-        return "bg-green-100 border-green-300 hover:bg-green-200"
-      case "lab":
-        return "bg-purple-100 border-purple-300 hover:bg-purple-200"
-      case "seminar":
-        return "bg-amber-100 border-amber-300 hover:bg-amber-200"
-      case "workshop":
-        return "bg-rose-100 border-rose-300 hover:bg-rose-200"
-      default:
-        return "bg-gray-100 border-gray-300 hover:bg-gray-200"
+  // Get color for event based on online/offline status
+  const getEventColor = (timetable: Timetable) => {
+    if (timetable.isOnline) {
+      return "bg-blue-100 border-blue-300 hover:bg-blue-200"
+    } else {
+      return "bg-green-100 border-green-300 hover:bg-green-200"
     }
   }
 
-  // Get text color for event based on class type
-  const getEventTextColor = (classType: string) => {
-    switch (classType.toLowerCase()) {
-      case "lecture":
-        return "text-blue-800"
-      case "tutorial":
-        return "text-green-800"
-      case "lab":
-        return "text-purple-800"
-      case "seminar":
-        return "text-amber-800"
-      case "workshop":
-        return "text-rose-800"
-      default:
-        return "text-gray-800"
+  // Get solid color for event based on online/offline status
+  const getEventSolidColor = (timetable: Timetable) => {
+    if (timetable.isOnline) {
+      return "bg-blue-500"
+    } else {
+      return "bg-green-500"
+    }
+  }
+
+  // Get text color for event based on online/offline status
+  const getEventTextColor = (timetable: Timetable) => {
+    if (timetable.isOnline) {
+      return "text-blue-800"
+    } else {
+      return "text-green-800"
     }
   }
 
@@ -468,6 +535,19 @@ export default function TimetablesPage() {
     }
 
     return `${hours} hr ${remainingMinutes} min`
+  }
+
+  // Get course name helper function
+  const getCourseName = (timetable: Timetable) => {
+    if (typeof timetable.course === "object" && timetable.course !== null) {
+      return timetable.course.name
+    }
+
+    const course = courses.find(
+      (c) => c._id === (typeof timetable.course === "string" ? timetable.course : timetable.course?._id),
+    )
+
+    return course?.name || "Unnamed Course"
   }
 
   return (
@@ -576,6 +656,22 @@ export default function TimetablesPage() {
                     />
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="isOnline" className="text-right">
+                      Class Mode
+                    </Label>
+                    <div className="col-span-3 flex items-center space-x-2">
+                      <Checkbox
+                        id="isOnline"
+                        name="isOnline"
+                        checked={formData.isOnline}
+                        onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, isOnline: !!checked }))}
+                      />
+                      <Label htmlFor="isOnline" className="text-sm font-normal">
+                        This is an online class
+                      </Label>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="repeatsWeekly" className="text-right">
                       Repeats Weekly
                     </Label>
@@ -632,7 +728,7 @@ export default function TimetablesPage() {
             <Button variant="outline" className="w-full md:w-auto">
               <Filter className="mr-2 h-4 w-4" />
               Filters
-              {(filters.courseId || filters.classType) && (
+              {(filters.courseId || filters.classType || filters.isOnline) && (
                 <Badge variant="secondary" className="ml-2">
                   {Object.values(filters).filter(Boolean).length}
                 </Badge>
@@ -677,7 +773,25 @@ export default function TimetablesPage() {
                 </Select>
               </div>
 
-              <Button variant="outline" className="w-full" onClick={() => setFilters({ courseId: "", classType: "" })}>
+              <div className="space-y-2">
+                <Label htmlFor="isOnlineFilter">Class Mode</Label>
+                <Select value={filters.isOnline} onValueChange={(value) => handleFilterChange("isOnline", value)}>
+                  <SelectTrigger id="isOnlineFilter">
+                    <SelectValue placeholder="All Modes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Modes</SelectItem>
+                    <SelectItem value="online">Online Classes</SelectItem>
+                    <SelectItem value="offline">In-Person Classes</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setFilters({ courseId: "", classType: "", isOnline: "" })}
+              >
                 Clear Filters
               </Button>
             </div>
@@ -694,8 +808,8 @@ export default function TimetablesPage() {
         </TabsList>
 
         <TabsContent value="calendar" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-2">
+          <Card className="overflow-hidden shadow-sm">
+            <CardHeader className="pb-2 border-b">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex items-center space-x-2">
                   <Button variant="outline" size="icon" onClick={prevPeriod}>
@@ -734,9 +848,9 @@ export default function TimetablesPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               {isLoading ? (
-                <div className="h-[600px] flex items-center justify-center">
+                <div className="h-[600px] flex items-center justify-center p-4">
                   <Skeleton className="h-[500px] w-full" />
                 </div>
               ) : (
@@ -744,28 +858,56 @@ export default function TimetablesPage() {
                   {/* Day View */}
                   {calendarView === "day" && (
                     <div className="h-[600px] overflow-y-auto">
-                      <div className="relative grid grid-cols-1 border-l">
-                        <div className="sticky top-0 z-20 bg-background border-b flex items-center justify-center py-2 font-medium">
-                          <div className={`text-center ${isToday(currentDate) ? "text-primary" : ""}`}>
-                            <div className="text-sm">{format(currentDate, "EEEE")}</div>
-                            <div className="text-xl">{format(currentDate, "d")}</div>
-                          </div>
+                      <div className="sticky top-0 z-20 bg-background border-b flex items-center justify-center py-3 font-medium">
+                        <div className={`text-center ${isToday(currentDate) ? "text-primary" : ""}`}>
+                          <div className="text-sm">{format(currentDate, "EEEE")}</div>
+                          <div className="text-xl">{format(currentDate, "d MMMM yyyy")}</div>
                         </div>
-                        {timeSlots.map((hour) => (
-                          <div key={hour} className="relative h-16 border-b">
-                            <div className="absolute -left-14 top-0 w-12 pr-2 text-right text-sm text-muted-foreground">
-                              {hour}:00
+                      </div>
+
+                      <div className="flex">
+                        {/* Time column */}
+                        <div className="w-16 flex-shrink-0 border-r bg-muted/5">
+                          {timeSlots.map((hour) => (
+                            <div key={hour} className="relative h-24">
+                              <div className="absolute top-0 right-0 transform -translate-y-1/2 pr-2 text-xs font-medium text-muted-foreground">
+                                {hour}:00
+                              </div>
                             </div>
-                            <div className="absolute top-0 left-0 w-full h-full">
+                          ))}
+                        </div>
+
+                        {/* Events area */}
+                        <div className="flex-grow relative">
+                          {/* Hour grid lines */}
+                          {timeSlots.map((hour) => (
+                            <div key={hour} className="h-24 border-b border-muted/20 relative">
+                              {/* Current time indicator */}
+                              {isToday(currentDate) &&
+                                getHours(new Date()) === hour &&
+                                getHours(new Date()) >= 8 &&
+                                getHours(new Date()) <= 21 && (
+                                  <div
+                                    className="absolute left-0 w-full h-0.5 bg-red-500 z-20"
+                                    style={{
+                                      top: `${(getMinutes(new Date()) / 60) * 96}px`,
+                                    }}
+                                  >
+                                    <div className="absolute -left-1 -top-1.5 w-2 h-2 rounded-full bg-red-500"></div>
+                                  </div>
+                                )}
+
+                              {/* Events */}
                               {getTimetablesForTimeSlot(currentDate, hour).map((timetable, index) => {
-                                const course = courses.find((c) => c._id === timetable.course)
-                                const eventColor = getEventColor(timetable.classType)
-                                const textColor = getEventTextColor(timetable.classType)
+                                const courseName = getCourseName(timetable)
+                                const eventColor = getEventColor(timetable)
+                                const textColor = getEventTextColor(timetable)
+
                                 return (
                                   <Tooltip key={timetable._id}>
                                     <TooltipTrigger asChild>
                                       <div
-                                        className={`absolute rounded-md p-2 border ${eventColor} transition-colors overflow-hidden cursor-pointer`}
+                                        className={`absolute rounded-md p-2 border shadow-sm ${eventColor} transition-colors overflow-hidden cursor-pointer`}
                                         style={{
                                           top: calculateEventTop(timetable),
                                           height: calculateEventHeight(timetable),
@@ -778,22 +920,47 @@ export default function TimetablesPage() {
                                           setShowEventDetails(true)
                                         }}
                                       >
-                                        <div className={`font-medium text-sm truncate ${textColor}`}>
-                                          {course?.name || "Unnamed Course"}
+                                        <div className="flex items-center gap-1">
+                                          <div
+                                            className={`w-2 h-2 rounded-full ${getEventSolidColor(timetable)}`}
+                                          ></div>
+                                          <div className={`font-medium text-sm truncate ${textColor}`}>
+                                            {courseName}
+                                          </div>
                                         </div>
-                                        <div className="text-xs capitalize truncate">
+                                        <div className="text-xs capitalize truncate flex items-center gap-1 mt-1">
+                                          {timetable.isOnline ? (
+                                            <Wifi className="h-3 w-3 text-blue-500" />
+                                          ) : (
+                                            <MapPin className="h-3 w-3 text-green-500" />
+                                          )}
                                           {timetable.classType} • {timetable.location}
                                         </div>
-                                        <div className="text-xs text-muted-foreground truncate">
+                                        <div className="text-xs text-muted-foreground truncate mt-1 flex items-center gap-1">
+                                          <Clock className="h-3 w-3 text-muted-foreground" />
                                           {format(parseISO(timetable.startTime), "h:mm a")} -
                                           {format(parseISO(timetable.endTime), "h:mm a")}
                                         </div>
+                                        {timetable.repeatsWeekly && (
+                                          <div className="text-xs text-muted-foreground mt-1">
+                                            <Badge variant="outline" className="text-[10px] py-0 h-4">
+                                              Weekly
+                                            </Badge>
+                                          </div>
+                                        )}
                                       </div>
                                     </TooltipTrigger>
                                     <TooltipContent>
                                       <div className="space-y-1">
-                                        <p className="font-medium">{course?.name || "Unnamed Course"}</p>
-                                        <p className="text-xs capitalize">{timetable.classType}</p>
+                                        <p className="font-medium">{courseName}</p>
+                                        <p className="text-xs capitalize flex items-center gap-1">
+                                          {timetable.isOnline ? (
+                                            <Wifi className="h-3 w-3 text-blue-500" />
+                                          ) : (
+                                            <MapPin className="h-3 w-3 text-green-500" />
+                                          )}
+                                          {timetable.classType}
+                                        </p>
                                         <p className="text-xs">{timetable.location}</p>
                                         <p className="text-xs">
                                           {format(parseISO(timetable.startTime), "h:mm a")} -
@@ -805,8 +972,8 @@ export default function TimetablesPage() {
                                 )
                               })}
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -818,35 +985,59 @@ export default function TimetablesPage() {
                         {getWeekViewDates().map((date, index) => (
                           <div
                             key={index}
-                            className={`text-center py-2 font-medium ${isToday(date) ? "bg-primary/10" : ""}`}
+                            className={`text-center py-3 font-medium ${isToday(date) ? "bg-primary/5" : ""}`}
                           >
                             <div className="text-sm">{format(date, "EEE")}</div>
                             <div className={`text-lg ${isToday(date) ? "text-primary" : ""}`}>{format(date, "d")}</div>
                           </div>
                         ))}
                       </div>
-                      <div className="relative grid grid-cols-7 border-l">
-                        {timeSlots.map((hour) => (
-                          <React.Fragment key={hour}>
-                            {getWeekViewDates().map((date, dateIndex) => (
-                              <div key={`${hour}-${dateIndex}`} className="relative h-16 border-r border-b">
-                                {dateIndex === 0 && (
-                                  <div className="absolute -left-14 top-0 w-12 pr-2 text-right text-sm text-muted-foreground">
-                                    {hour}:00
-                                  </div>
-                                )}
-                                <div className="absolute top-0 left-0 w-full h-full">
+
+                      <div className="flex">
+                        {/* Time column */}
+                        <div className="w-16 flex-shrink-0 border-r bg-muted/5">
+                          {timeSlots.map((hour) => (
+                            <div key={hour} className="relative h-24">
+                              <div className="absolute top-0 right-0 transform -translate-y-1/2 pr-2 text-xs font-medium text-muted-foreground">
+                                {hour}:00
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Week grid */}
+                        <div className="flex-grow grid grid-cols-7">
+                          {getWeekViewDates().map((date, dateIndex) => (
+                            <div key={dateIndex} className={`border-r ${isToday(date) ? "bg-primary/5" : ""}`}>
+                              {timeSlots.map((hour) => (
+                                <div key={`${dateIndex}-${hour}`} className="h-24 border-b border-muted/20 relative">
+                                  {/* Current time indicator */}
+                                  {isToday(date) &&
+                                    getHours(new Date()) === hour &&
+                                    getHours(new Date()) >= 8 &&
+                                    getHours(new Date()) <= 21 && (
+                                      <div
+                                        className="absolute left-0 w-full h-0.5 bg-red-500 z-20"
+                                        style={{
+                                          top: `${(getMinutes(new Date()) / 60) * 96}px`,
+                                        }}
+                                      >
+                                        <div className="absolute -left-1 -top-1.5 w-2 h-2 rounded-full bg-red-500"></div>
+                                      </div>
+                                    )}
+
+                                  {/* Events */}
                                   {getTimetablesForTimeSlot(date, hour).map((timetable, index) => {
-                                    const course = courses.find((c) => c._id === timetable.course)
-                                    const eventColor = getEventColor(timetable.classType)
-                                    const textColor = getEventTextColor(timetable.classType)
+                                    const courseName = getCourseName(timetable)
+                                    const eventColor = getEventColor(timetable)
+                                    const textColor = getEventTextColor(timetable)
                                     const allEventsInSlot = getTimetablesForTimeSlot(date, hour)
 
                                     return (
                                       <Tooltip key={timetable._id}>
                                         <TooltipTrigger asChild>
                                           <div
-                                            className={`absolute rounded-md p-1 border ${eventColor} transition-colors overflow-hidden cursor-pointer`}
+                                            className={`absolute rounded-md p-1 border shadow-sm ${eventColor} transition-colors overflow-hidden cursor-pointer`}
                                             style={{
                                               top: calculateEventTop(timetable),
                                               height: calculateEventHeight(timetable),
@@ -859,16 +1050,28 @@ export default function TimetablesPage() {
                                               setShowEventDetails(true)
                                             }}
                                           >
-                                            <div className={`font-medium text-xs truncate ${textColor}`}>
-                                              {course?.name || "Unnamed Course"}
+                                            <div className="flex items-center gap-1">
+                                              <div
+                                                className={`w-2 h-2 rounded-full ${getEventSolidColor(timetable)}`}
+                                              ></div>
+                                              <div className={`font-medium text-xs truncate ${textColor}`}>
+                                                {courseName}
+                                              </div>
                                             </div>
                                             <div className="text-xs capitalize truncate">{timetable.classType}</div>
                                           </div>
                                         </TooltipTrigger>
                                         <TooltipContent>
                                           <div className="space-y-1">
-                                            <p className="font-medium">{course?.name || "Unnamed Course"}</p>
-                                            <p className="text-xs capitalize">{timetable.classType}</p>
+                                            <p className="font-medium">{courseName}</p>
+                                            <p className="text-xs capitalize flex items-center gap-1">
+                                              {timetable.isOnline ? (
+                                                <Wifi className="h-3 w-3 text-blue-500" />
+                                              ) : (
+                                                <MapPin className="h-3 w-3 text-green-500" />
+                                              )}
+                                              {timetable.classType}
+                                            </p>
                                             <p className="text-xs">{timetable.location}</p>
                                             <p className="text-xs">
                                               {format(parseISO(timetable.startTime), "h:mm a")} -
@@ -880,10 +1083,10 @@ export default function TimetablesPage() {
                                     )
                                   })}
                                 </div>
-                              </div>
-                            ))}
-                          </React.Fragment>
-                        ))}
+                              ))}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -893,12 +1096,12 @@ export default function TimetablesPage() {
                     <div className="h-[600px] overflow-y-auto">
                       <div className="grid grid-cols-7 border-b sticky top-0 z-20 bg-background">
                         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
-                          <div key={day} className="text-center py-2 font-medium text-sm">
+                          <div key={day} className="text-center py-3 font-medium text-sm">
                             {day}
                           </div>
                         ))}
                       </div>
-                      <div className="grid grid-cols-7 auto-rows-fr border-l">
+                      <div className="grid grid-cols-7 auto-rows-fr">
                         {getMonthViewDates().map((date, index) => {
                           const isCurrentMonth = isSameMonth(date, currentDate)
                           const isCurrentDay = isToday(date)
@@ -908,31 +1111,33 @@ export default function TimetablesPage() {
                             <div
                               key={index}
                               className={`min-h-24 p-1 border-r border-b relative ${
-                                !isCurrentMonth ? "bg-muted/30 text-muted-foreground" : ""
-                              } ${isCurrentDay ? "bg-primary/10" : ""}`}
+                                !isCurrentMonth ? "bg-muted/10 text-muted-foreground" : ""
+                              } ${isCurrentDay ? "bg-primary/5" : ""}`}
                             >
                               <div className={`text-right p-1 ${isCurrentDay ? "font-bold text-primary" : ""}`}>
                                 {format(date, "d")}
                               </div>
                               <div className="space-y-1 max-h-20 overflow-y-auto">
                                 {dayTimetables.slice(0, 3).map((timetable) => {
-                                  const course = courses.find((c) => c._id === timetable.course)
-                                  const eventColor = getEventColor(timetable.classType)
-                                  const textColor = getEventTextColor(timetable.classType)
+                                  const courseName = getCourseName(timetable)
+                                  const eventColor = getEventColor(timetable)
+                                  const textColor = getEventTextColor(timetable)
 
                                   return (
                                     <div
                                       key={timetable._id}
-                                      className={`text-xs p-1 rounded border ${eventColor} truncate transition-colors cursor-pointer`}
+                                      className={`text-xs p-1 rounded border shadow-sm ${eventColor} truncate transition-colors cursor-pointer`}
                                       onClick={() => {
                                         setSelectedEvent(timetable)
                                         setShowEventDetails(true)
                                       }}
                                     >
-                                      <div className={`font-medium truncate ${textColor}`}>
-                                        {course?.name || "Unnamed Course"}
+                                      <div className="flex items-center gap-1">
+                                        <div className={`w-2 h-2 rounded-full ${getEventSolidColor(timetable)}`}></div>
+                                        <div className={`font-medium truncate ${textColor}`}>{courseName}</div>
                                       </div>
-                                      <div className="text-xs text-muted-foreground truncate">
+                                      <div className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-0.5">
+                                        <Clock className="h-3 w-3 text-muted-foreground" />
                                         {format(parseISO(timetable.startTime), "h:mm a")}
                                       </div>
                                     </div>
@@ -984,24 +1189,32 @@ export default function TimetablesPage() {
                   .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
                   .slice(0, 9)
                   .map((timetable) => {
-                    const course = courses.find((c) => c._id === timetable.course)
-                    const eventColor = getEventColor(timetable.classType)
-                    const textColor = getEventTextColor(timetable.classType)
+                    const courseName = getCourseName(timetable)
+                    const eventColor = getEventColor(timetable)
+                    const textColor = getEventTextColor(timetable)
+                    const solidColor = getEventSolidColor(timetable)
 
                     return (
                       <Card
                         key={timetable._id}
-                        className="hover:bg-muted/50 transition-colors cursor-pointer overflow-hidden"
+                        className="hover:bg-muted/50 transition-colors cursor-pointer overflow-hidden shadow-sm"
                         onClick={() => {
                           setSelectedEvent(timetable)
                           setShowEventDetails(true)
                         }}
                       >
-                        <div className={`h-2 ${eventColor.replace("hover:bg-", "")}`}></div>
+                        <div className={`h-2 ${solidColor}`}></div>
                         <CardHeader>
-                          <CardTitle className={textColor}>{course?.name || "Unnamed Course"}</CardTitle>
+                          <CardTitle className={textColor}>{courseName}</CardTitle>
                           <CardDescription className="capitalize flex items-center justify-between">
-                            <span>{timetable.classType}</span>
+                            <span className="flex items-center gap-1">
+                              {timetable.isOnline ? (
+                                <Wifi className="h-3 w-3 text-blue-500" />
+                              ) : (
+                                <MapPin className="h-3 w-3 text-green-500" />
+                              )}
+                              {timetable.classType}
+                            </span>
                             <Badge variant="outline">{formatDuration(timetable.startTime, timetable.endTime)}</Badge>
                           </CardDescription>
                         </CardHeader>
@@ -1020,9 +1233,18 @@ export default function TimetablesPage() {
                             </span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <MapPin className="h-4 w-4 text-muted-foreground" />
+                            {timetable.isOnline ? (
+                              <Globe className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <MapPin className="h-4 w-4 text-muted-foreground" />
+                            )}
                             <span className="text-sm">{timetable.location}</span>
                           </div>
+                          {timetable.repeatsWeekly && (
+                            <Badge variant="outline" className="mt-1">
+                              Weekly
+                            </Badge>
+                          )}
                         </CardContent>
                       </Card>
                     )
@@ -1036,11 +1258,11 @@ export default function TimetablesPage() {
         <TabsContent value="weekly" className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
             {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day) => (
-              <Card key={day}>
-                <CardHeader>
+              <Card key={day} className="shadow-sm">
+                <CardHeader className="bg-muted/5">
                   <CardTitle>{day}</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pt-4">
                   {isLoading ? (
                     <div className="space-y-2">
                       <Skeleton className="h-16 w-full" />
@@ -1055,22 +1277,32 @@ export default function TimetablesPage() {
                           return timeA - timeB
                         })
                         .map((timetable) => {
-                          const course = courses.find((c) => c._id === timetable.course)
-                          const eventColor = getEventColor(timetable.classType)
-                          const textColor = getEventTextColor(timetable.classType)
+                          const courseName = getCourseName(timetable)
+                          const eventColor = getEventColor(timetable)
+                          const textColor = getEventTextColor(timetable)
 
                           return (
                             <div
                               key={timetable._id}
-                              className={`flex items-center p-3 rounded-md border ${eventColor.replace("hover:", "")} transition-colors cursor-pointer`}
+                              className={`flex items-center p-3 rounded-md border shadow-sm ${eventColor.replace("hover:", "")} transition-colors cursor-pointer`}
                               onClick={() => {
                                 setSelectedEvent(timetable)
                                 setShowEventDetails(true)
                               }}
                             >
                               <div className="flex-1">
-                                <p className={`font-medium ${textColor}`}>{course?.name || "Unnamed Course"}</p>
-                                <p className="text-sm text-muted-foreground capitalize">{timetable.classType}</p>
+                                <p className={`font-medium ${textColor} flex items-center gap-1`}>
+                                  <div className={`w-2 h-2 rounded-full ${getEventSolidColor(timetable)}`}></div>
+                                  {courseName}
+                                </p>
+                                <p className="text-sm text-muted-foreground capitalize flex items-center gap-1">
+                                  {timetable.isOnline ? (
+                                    <Wifi className="h-3 w-3 text-blue-500" />
+                                  ) : (
+                                    <MapPin className="h-3 w-3 text-green-500" />
+                                  )}
+                                  {timetable.classType}
+                                </p>
                               </div>
                               <div className="text-right">
                                 <p className="text-sm">
@@ -1112,25 +1344,33 @@ export default function TimetablesPage() {
               : filteredTimetables
                   .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
                   .map((timetable) => {
-                    const course = courses.find((c) => c._id === timetable.course)
-                    const eventColor = getEventColor(timetable.classType)
-                    const textColor = getEventTextColor(timetable.classType)
+                    const courseName = getCourseName(timetable)
+                    const eventColor = getEventColor(timetable)
+                    const textColor = getEventTextColor(timetable)
+                    const solidColor = getEventSolidColor(timetable)
                     const isPast = new Date(timetable.endTime) < new Date()
 
                     return (
                       <Card
                         key={timetable._id}
-                        className={`hover:bg-muted/50 transition-colors cursor-pointer overflow-hidden ${isPast ? "opacity-70" : ""}`}
+                        className={`hover:bg-muted/50 transition-colors cursor-pointer overflow-hidden shadow-sm ${isPast ? "opacity-70" : ""}`}
                         onClick={() => {
                           setSelectedEvent(timetable)
                           setShowEventDetails(true)
                         }}
                       >
-                        <div className={`h-2 ${eventColor.replace("hover:bg-", "")}`}></div>
+                        <div className={`h-2 ${solidColor}`}></div>
                         <CardHeader>
-                          <CardTitle className={textColor}>{course?.name || "Unnamed Course"}</CardTitle>
+                          <CardTitle className={textColor}>{courseName}</CardTitle>
                           <CardDescription className="capitalize flex items-center justify-between">
-                            <span>{timetable.classType}</span>
+                            <span className="flex items-center gap-1">
+                              {timetable.isOnline ? (
+                                <Wifi className="h-3 w-3 text-blue-500" />
+                              ) : (
+                                <MapPin className="h-3 w-3 text-green-500" />
+                              )}
+                              {timetable.classType}
+                            </span>
                             {isPast ? (
                               <Badge variant="outline" className="bg-muted">
                                 Past
@@ -1154,6 +1394,11 @@ export default function TimetablesPage() {
                               {format(parseISO(timetable.endTime), "h:mm a")}
                             </span>
                           </div>
+                          {timetable.repeatsWeekly && (
+                            <Badge variant="outline" className="mt-1">
+                              Weekly
+                            </Badge>
+                          )}
                         </CardContent>
                       </Card>
                     )
@@ -1171,10 +1416,13 @@ export default function TimetablesPage() {
           {selectedEvent && (
             <>
               <DialogHeader>
-                <DialogTitle>
-                  {courses.find((c) => c._id === selectedEvent.course)?.name || "Unnamed Course"}
-                </DialogTitle>
-                <DialogDescription className="capitalize">
+                <DialogTitle>{getCourseName(selectedEvent)}</DialogTitle>
+                <DialogDescription className="capitalize flex items-center gap-1">
+                  {selectedEvent.isOnline ? (
+                    <Wifi className="h-3 w-3 text-blue-500" />
+                  ) : (
+                    <MapPin className="h-3 w-3 text-green-500" />
+                  )}
                   {selectedEvent.classType} • {formatDuration(selectedEvent.startTime, selectedEvent.endTime)}
                 </DialogDescription>
               </DialogHeader>
@@ -1199,10 +1447,17 @@ export default function TimetablesPage() {
                 </div>
 
                 <div className="flex items-start space-x-3">
-                  <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  {selectedEvent.isOnline ? (
+                    <Globe className="h-5 w-5 text-blue-500 mt-0.5" />
+                  ) : (
+                    <MapPin className="h-5 w-5 text-green-500 mt-0.5" />
+                  )}
                   <div>
                     <p className="font-medium">Location</p>
                     <p className="text-sm text-muted-foreground">{selectedEvent.location}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {selectedEvent.isOnline ? "Online Class" : "In-Person Class"}
+                    </p>
                   </div>
                 </div>
 
