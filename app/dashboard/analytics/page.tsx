@@ -191,12 +191,12 @@ export default function AnalyticsPage() {
   }
 
   useEffect(() => {
-    if (user && (user.role === "admin" || user.role === "lecturer")) {
+    if (user && (user.role === "Admin" || user.role === "lecturer")) {
       fetchData()
     }
   }, [user])
 
-  if (!user || (user.role !== "admin" && user.role !== "lecturer")) {
+  if (!user || (user.role !== "Admin" && user.role !== "lecturer")) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">You don't have permission to view analytics</p>

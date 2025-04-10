@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { Calendar, FileText, Home, LogOut, MessageSquare, Settings, User, Search, Watch } from "lucide-react"
+import { Calendar, FileText, Home, LogOut, MessageSquare, Settings, User, Search, Watch, BookText, ChartColumn, Aperture, AtSign  } from "lucide-react"
 import { useState } from "react"
 
 interface SidebarProps {
@@ -90,6 +90,34 @@ export function Sidebar({ user, onSignOut }: SidebarProps) {
             icon={Watch}
             label="Timetable"
             isActive={isActive("/dashboard/timetable")}
+          />
+
+          <NavItem
+            href="/dashboard/classes"
+            icon={BookText}
+            label="Classes"
+            isActive={isActive("/dashboard/classes")}
+          />
+
+          <NavItem
+            href="/dashboard/analytics"
+            icon={ChartColumn}
+            label="Analytics"
+            isActive={isActive("/dashboard/analytics")}
+          />
+
+          <NavItem
+            href="/dashboard/attendance"
+            icon={Aperture}
+            label="Attendance"
+            isActive={isActive("/dashboard/attendance")}
+          />
+
+          <NavItem
+            href="/dashboard/courses"
+            icon={AtSign}
+            label="Courses"
+            isActive={isActive("/dashboard/courses")}
           />
 
           <div className="my-3 h-px bg-border" />
